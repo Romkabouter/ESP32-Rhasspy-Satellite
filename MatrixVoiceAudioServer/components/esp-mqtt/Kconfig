@@ -1,0 +1,26 @@
+menu "esp-mqtt"
+
+config ESP_MQTT_ENABLED
+    bool "Enable the MQTT component"
+    select LWIP_SO_RCVBUF
+    default y
+    help
+        This is currently only used to enforce the selection of LWIP_SO_RCVBUF.
+        Disabling the component does not actually disable something.
+
+config ESP_MQTT_TASK_STACK_SIZE
+    int "MQTT background process task stack size"
+    default 4096
+
+config ESP_MQTT_TASK_STACK_PRIORITY
+    int "MQTT background process task priority"
+    default 5
+
+config ESP_MQTT_EVENT_QUEUE_SIZE
+    int "MQTT event queue size"
+    default 64
+    help
+        This value defines the amount of messages that are queued during various
+        calls and dispatched by the background process.
+
+endmenu

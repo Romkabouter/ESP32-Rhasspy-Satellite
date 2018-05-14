@@ -1,0 +1,29 @@
+menu "MatrixVoiceAudioServer"
+
+config WIFI_SSID
+    string "the ssid of the wireless network to connect to"
+    default "myssid"
+
+config WIFI_PASS
+    string "the passphrase for the specified network"
+    default "mypassword"
+
+
+
+config MQTT_HOST
+    string "mqtt broker to connect to"
+    default "localhost"
+
+config MQTT_PORT
+    int "mqtt broker port"
+    default 1883
+
+config MQTT_USER
+    string "mqtt broker username"
+    default "try"
+
+config MQTT_PASS
+    string "mqtt broker passphrase"
+    default "try"
+
+endmenu
