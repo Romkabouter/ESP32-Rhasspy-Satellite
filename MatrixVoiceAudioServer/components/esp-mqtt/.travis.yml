@@ -1,0 +1,14 @@
+dist: trusty
+sudo: false
+
+language:
+  - cpp
+
+addons:
+  apt:
+    packages:
+    - gperf
+
+script:
+  - pip install pyserial
+  - make build
