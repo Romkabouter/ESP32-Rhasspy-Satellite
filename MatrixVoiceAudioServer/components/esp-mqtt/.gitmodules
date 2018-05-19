@@ -1,0 +1,3 @@
+[submodule "lwmqtt"]
+	path = lwmqtt
+	url = https://github.com/256dpi/lwmqtt.git
