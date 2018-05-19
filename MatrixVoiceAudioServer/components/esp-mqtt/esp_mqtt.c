@@ -314,12 +314,10 @@ void esp_mqtt_start(const char *host, int port, const char *client_id, const cha
 
   // create mqtt thread
   ESP_LOGI(ESP_MQTT_LOG_TAG, "esp_mqtt_start: create task");
-  xTaskCreatePinnedToCore(esp_mqtt_process, "esp_mqtt", CONFIG_ESP_MQTT_TASK_STACK_SIZE, NULL,
-                          CONFIG_ESP_MQTT_TASK_STACK_PRIORITY, &esp_mqtt_task, 1);
+  xTaskCreate(esp_mqtt_process, "esp_mqtt", CONFIG_ESP_MQTT_TASK_STACK_SIZE, NULL, CONFIG_ESP_MQTT_TASK_STACK_PRIORITY, NULL);
 
   // set local flag
   esp_mqtt_running = true;
-
   // release mutex
   ESP_MQTT_UNLOCK();
 }
