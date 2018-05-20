@@ -11,6 +11,7 @@ To be able to do that, follow these steps:
 
 - Connect your Voice with a Raspberry Pi, you should probably already have that when you were trying the esp32 demo bij Hackster.io
 - ssh into the pi, execute this command: voice_esp32_enable. If you get a permission denied, execute the command again. 
+- esptool.py --chip esp32 --port /dev/ttyS0 --baud 115200 --before default_reset --after hard_reset erase_flash
 - Pull the plug on the Pi, and restart it.
 - In this repo, do a make menuconfig, go to the Partition Table entry and change it to "Factory App, two OTA definitions"
 - Enter MatrixVoiceAudioServer and enter the credentials. I have not tried it with a mqtt password, but it should work.
