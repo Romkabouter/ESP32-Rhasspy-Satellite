@@ -29,6 +29,7 @@
 #include "esp_event_loop.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
+#include "cJSON.h"
 
 #include "lwip/err.h"
 #include "lwip/sockets.h"
@@ -55,6 +56,7 @@ typedef enum {
 #define MQTT_PORT CONFIG_MQTT_PORT
 #define MQTT_USER CONFIG_MQTT_USER
 #define MQTT_PASS CONFIG_MQTT_PASS
+#define SITEID CONFIG_SITEID
 #define BUFFER_SIZE 1000 //be sure to create enough buffer
 #define AP_CONNECTION_ESTABLISHED (1 << 0)
 #define MQTT_CONNECTION_ESTABLISHED (1 << 0)
@@ -479,10 +481,17 @@ static void mqtt_status_cb(esp_mqtt_status_t status) {
 }
 
 static void mqtt_message_cb(const char *topic, uint8_t *payload, size_t len) {
-    //TODO: Create stuff to control the leds on the voice for visual effects
-    if ((int)strstr (topic,"toggleOff") > 0) {
-        HotWordSetDetected(1);
+    const cJSON *site = NULL;
+    cJSON *json = cJSON_Parse((const char *)payload);
+    site = cJSON_GetObjectItemCaseSensitive(json, "siteId");
+    if ((int)strstr (topic, "toggleOff") > 0) {
+        if (strcmp(site->valuestring,SITEID) == 0) {
+          HotWordSetDetected(1);
+        }    
     } else {
-      HotWordSetDetected(0);
+        if (strcmp(site->valuestring,SITEID) == 0) {
+         HotWordSetDetected(0);
+        }
     }
+    cJSON_Delete(json);
 }

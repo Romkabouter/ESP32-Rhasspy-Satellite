@@ -8,8 +8,6 @@ config WIFI_PASS
     string "the passphrase for the specified network"
     default "mypassword"
 
-
-
 config MQTT_HOST
     string "mqtt broker to connect to"
     default "localhost"
@@ -25,5 +23,10 @@ config MQTT_USER
 config MQTT_PASS
     string "mqtt broker passphrase"
     default "try"
+
+config SITEID
+    string "SiteID"
+    default "default"
+
 
 endmenu
