@@ -45,11 +45,11 @@ extern "C" {
 // *****************************************************
 #define AP_SSID CONFIG_WIFI_SSID
 #define AP_PASSWORD CONFIG_WIFI_PASS
+#define SITEID CONFIG_SITEID
 #define RATE 16000
 #define CHUNK 256 //set to multiplications of 256, voice return a set of 256
 #define WIDTH 2
 #define CHANNELS 1
-#define TOPIC "hermes/audioServer/livingroom/audioFrame"
 
 namespace hal = matrix_hal;
 hal::MicrophoneArray mics;
@@ -163,9 +163,10 @@ int cpp_loop(void)
             memcpy(&payload[sizeof(header)], voicemapped, sizeof(voicemapped));
     
             //Ok, we can now  send the wave message
-            esp_mqtt_publish(TOPIC, (uint8_t *)payload, sizeof(payload),0, false);
+            std::string topic = std::string("hermes/audioServer/") + SITEID + std::string("/audioFrame");
+
+            esp_mqtt_publish(topic.c_str(), (uint8_t *)payload, sizeof(payload),0, false);
         }
-//        vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 }
 
