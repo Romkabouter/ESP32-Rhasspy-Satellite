@@ -21,6 +21,7 @@
 //
 
 #include <string.h>
+#include <math.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "esp_wifi.h"
@@ -105,12 +106,13 @@ void networkConnect(const char *ssid, const char *password)
     ESP_ERROR_CHECK( esp_wifi_set_storage(WIFI_STORAGE_RAM) );
 
     wifi_config_t wlanStaConfig;
-    strncpy((char *)wlanStaConfig.sta.ssid, ssid, sizeof(wlanStaConfig.sta.ssid) / sizeof(char));
-    strncpy((char *)wlanStaConfig.sta.password, password, sizeof(wlanStaConfig.sta.password) / sizeof(char));
+    strcpy((char *)wlanStaConfig.sta.ssid, ssid);
+    strcpy((char *)wlanStaConfig.sta.password, password);
+
     wlanStaConfig.sta.bssid_set = false;
     
     ESP_ERROR_CHECK( esp_wifi_set_mode(WIFI_MODE_STA) );
-    ESP_ERROR_CHECK( esp_wifi_set_config(WIFI_IF_STA, &wlanStaConfig) );
+    ESP_ERROR_CHECK( esp_wifi_set_config(ESP_IF_WIFI_STA, &wlanStaConfig) );
     ESP_ERROR_CHECK( esp_wifi_start() );
 }
 
@@ -482,16 +484,19 @@ static void mqtt_status_cb(esp_mqtt_status_t status) {
 
 static void mqtt_message_cb(const char *topic, uint8_t *payload, size_t len) {
     const cJSON *site = NULL;
-    cJSON *json = cJSON_Parse((const char *)payload);
-    site = cJSON_GetObjectItemCaseSensitive(json, "siteId");
     if ((int)strstr (topic, "toggleOff") > 0) {
+        cJSON *json = cJSON_Parse((const char *)payload);
+        site = cJSON_GetObjectItemCaseSensitive(json, "siteId");
         if (strcmp(site->valuestring,SITEID) == 0) {
           HotWordSetDetected(1);
         }    
-    } else {
+        cJSON_Delete(json);
+    } else if ((int)strstr (topic, "toggleOn") > 0) {
+        cJSON *json = cJSON_Parse((const char *)payload);
+        site = cJSON_GetObjectItemCaseSensitive(json, "siteId");
         if (strcmp(site->valuestring,SITEID) == 0) {
          HotWordSetDetected(0);
         }
+        cJSON_Delete(json);
     }
-    cJSON_Delete(json);
 }

@@ -124,6 +124,7 @@ int cpp_loop(void)
     mics.ReadConfValues();
     //Hmm, is this actually needed and what does it do?
     mics.CalculateDelays(0, 0, 1000, 320 * 1000);  
+
     setEverloop(10,0,0,0);
   
     while (true) {
@@ -167,7 +168,7 @@ int cpp_loop(void)
 
             esp_mqtt_publish(topic.c_str(), (uint8_t *)payload, sizeof(payload),0, false);
         }
-    }
+    }    
 }
 
 extern "C" {
