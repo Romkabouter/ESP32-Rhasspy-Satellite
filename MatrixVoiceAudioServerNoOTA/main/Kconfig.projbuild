@@ -1,0 +1,11 @@
+menu "MatrixVoiceAudioServerNoOTA"
+
+config WIFI_SSID
+    string "the ssid of the wireless network to connect to"
+    default "myssid"
+
+config WIFI_PASS
+    string "the passphrase for the specified network"
+    default "mypassword"
+
+endmenu

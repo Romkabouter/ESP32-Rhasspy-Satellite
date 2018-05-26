@@ -39,6 +39,7 @@ extern "C" {
 #include "voice_memory_map.h"
 #include "microphone_array.h"
 #include "wishbone_bus.h"
+#include "audio_output.h"
 
 // *****************************************************
 // TODO - update these definitions for your environment!
@@ -124,7 +125,24 @@ int cpp_loop(void)
     mics.ReadConfValues();
     //Hmm, is this actually needed and what does it do?
     mics.CalculateDelays(0, 0, 1000, 320 * 1000);  
+ 
+    hal::AudioOutput dac;
+    dac.Setup(&wb);
+    dac.SetPCMSamplingFrequency(RATE);
+    dac.SetVolumen(100);
+    dac.SetOutputSelector(hal::kHeadPhone);
 
+    //TEST, play a sound
+    size_t buf_size = 1024;
+    uint16_t samples[buf_size];
+    
+    for(int i=0; i<buf_size; ++i) {
+        samples[i] = cos(440.0*(float)i*3.14159/16000);
+    }
+    
+    //memcpy(&dac.write_data_[0],samples,1024);
+    //dac.Write();
+ 
     setEverloop(10,0,0,0);
   
     while (true) {
