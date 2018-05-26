@@ -140,7 +140,7 @@ int cpp_loop(void)
         samples[i] = cos(440.0*(float)i*3.14159/16000);
     }
     
-    //memcpy(&dac.write_data_[0],samples,1024);
+    //memcpy(&dac.write_data_[0],samples,buf_size);
     //dac.Write();
  
     setEverloop(10,0,0,0);

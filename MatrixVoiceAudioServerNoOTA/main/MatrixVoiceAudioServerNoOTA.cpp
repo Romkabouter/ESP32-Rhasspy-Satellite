@@ -19,16 +19,52 @@
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_event_loop.h"
+#include "everloop.h"
+#include "everloop_image.h"
+#include "voice_memory_map.h"
+#include "microphone_array.h"
+#include "wishbone_bus.h"
 
 #define SSID CONFIG_WIFI_SSID
 #define PASSWORD CONFIG_WIFI_PASS
+#define RATE 16000
+#define CHUNK 256 //set to multiplications of 256, voice return a set of 256
+#define WIDTH 2
+#define CHANNELS 1
+
+namespace hal = matrix_hal;
+hal::MicrophoneArray mics;
+hal::Everloop everloop;
+hal::EverloopImage image1d;
 
 static esp_err_t event_handler(void *ctx, system_event_t *event)
 {
-	if (event->event_id == SYSTEM_EVENT_STA_GOT_IP) {
-//		xTaskCreatePinnedToCore(&telnetTask, "telnetTask", 8048, NULL, 5, NULL, 0);
-	}
+    switch(event->event_id) {
+        case SYSTEM_EVENT_STA_GOT_IP:
+ //           networkSetConnected(1);
+            break;
+            
+        case SYSTEM_EVENT_STA_DISCONNECTED:
+            esp_wifi_connect();
+//            networkSetConnected(0);
+            break;
+            
+        default:
+            break;
+    }
+    
   return ESP_OK;
+}
+
+void setEverloop(int red, int green, int blue, int white) {
+    for (hal::LedValue& led : image1d.leds) {
+      led.red = red;
+      led.green = green;
+      led.blue = blue;
+      led.white = white;
+    }
+
+    everloop.Write(&image1d);
 }
 
 int cpp_loop(void)
@@ -49,9 +85,28 @@ int cpp_loop(void)
     ESP_ERROR_CHECK( esp_wifi_set_config(WIFI_IF_STA, &sta_config) );
     ESP_ERROR_CHECK( esp_wifi_start() );
     ESP_ERROR_CHECK( esp_wifi_connect() );
+ 
+     // ---------------------------------------------------------------------------
+    // MATRIX VOICE STUFF
+    // ---------------------------------------------------------------------------
+    hal::WishboneBus wb;
+    wb.Init();
+    //setup everloop
+    everloop.Setup(&wb);
+    setEverloop(0,0,0,0);
+    //setup mics
+    mics.Setup(&wb);
+    mics.SetSamplingRate(RATE);
+    mics.ReadConfValues();
+    //Hmm, is this actually needed and what does it do?
+    mics.CalculateDelays(0, 0, 1000, 320 * 1000);  
+ 
+    setEverloop(10,0,0,0);
     
-    return 0;
+    while (true) {
     
+    }
+   
 }
 
 extern "C" {
