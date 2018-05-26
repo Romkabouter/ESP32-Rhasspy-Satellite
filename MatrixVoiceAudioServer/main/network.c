@@ -105,7 +105,7 @@ void networkConnect(const char *ssid, const char *password)
     ESP_ERROR_CHECK( esp_wifi_init(&wlanInitConfig) );
     ESP_ERROR_CHECK( esp_wifi_set_storage(WIFI_STORAGE_RAM) );
 
-    wifi_config_t wlanStaConfig;
+    wifi_config_t wlanStaConfig = {};
     strcpy((char *)wlanStaConfig.sta.ssid, ssid);
     strcpy((char *)wlanStaConfig.sta.password, password);
 
