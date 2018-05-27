@@ -20,8 +20,13 @@ To be able to do that, follow these steps:
 
 After the flashing, to led ring should start with RED, and when connected to your wifi, it should become BLUE.
 If connected to the MQTT broker your Snips is listening to, the ledring should become GREEN when the hotword is detected and then BLUE again.
+
 Test out the OTA flashing by doing: python update_firmware.py ipadress-of-your-espvoice build/MatrixVoiceAudioServer.bin
 The ledring should become WHITE and some console should be printed, see https://github.com/classycodeoss/esp32-ota
 
 When all this was working correctly, you can unplug the Pi, remove the Voice and plugin the adapter to the Voice
 While booting, the same should happen: RED when initializing, then BLUE when connected.
+
+## Known issues
+- Reports are made that no connection is made to the network. This seems to be releated to the OTA networktask and mqtt task. I have no solution for this yet. If you are an esp32 expert, please help.
+- In some case the RED and BLUE are switched, this might be releated running outdates FPGA. See this topic: https://www.matrix.one/products/voice
