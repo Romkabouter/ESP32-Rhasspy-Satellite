@@ -1,0 +1,4 @@
+cmake-build-debug/
+test/xtensa-esp32-elf
+test/esp-idf
+test/build

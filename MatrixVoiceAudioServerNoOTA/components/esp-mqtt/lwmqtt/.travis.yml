@@ -1,0 +1,13 @@
+dist: trusty
+sudo: false
+
+language:
+  - cpp
+
+script:
+  - make gtest
+  - mkdir build
+  - cd build
+  - cmake ..
+  - make
+  - ./tests
