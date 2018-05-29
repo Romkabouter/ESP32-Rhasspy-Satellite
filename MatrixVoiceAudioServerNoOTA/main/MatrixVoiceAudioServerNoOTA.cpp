@@ -150,6 +150,8 @@ static void mqtt_status_cb(esp_mqtt_status_t status) {
     case ESP_MQTT_STATUS_DISCONNECTED:
         //Not connected anymore, stop trying to send
         MqttSetConnected(0);
+        //reconnect
+        esp_mqtt_start(MQTT_HOST, MQTT_PORT, "esp-mqtt", MQTT_USER, MQTT_PASS);
         break;
     }
 }

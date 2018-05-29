@@ -42,7 +42,6 @@
 #include "network.h"
 #include "ota_update.h"
 
-
 typedef enum {
     NWR_READ_COMPLETE = 0,
     NWR_READ_TIMEOUT = 1,
@@ -68,7 +67,6 @@ static EventGroupHandle_t hwEventGroup;
 
 // Indicates that we should trigger a re-boot after sending the response.
 static int sRebootAfterReply;
-
 
 // Listen to TCP requests on port 80
 static void networkTask(void *pvParameters);
@@ -473,11 +471,14 @@ static void mqtt_status_cb(esp_mqtt_status_t status) {
         //set connected to true to be able to send packets
         esp_mqtt_subscribe("hermes/hotword/toggleOff", 0);
         esp_mqtt_subscribe("hermes/hotword/toggleOn", 0);
+        esp_mqtt_subscribe("hermes/audioServer/huiskamer/playBytes/#",0);
         MqttSetConnected(1);
         break;
     case ESP_MQTT_STATUS_DISCONNECTED:
         //Not connected anymore, stop trying to send
         MqttSetConnected(0);
+        //reconnect
+        esp_mqtt_start(MQTT_HOST, MQTT_PORT, "esp-mqtt", MQTT_USER, MQTT_PASS);
         break;
     }
 }

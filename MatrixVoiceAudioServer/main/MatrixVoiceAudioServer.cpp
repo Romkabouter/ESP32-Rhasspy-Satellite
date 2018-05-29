@@ -39,7 +39,7 @@ extern "C" {
 #include "voice_memory_map.h"
 #include "microphone_array.h"
 #include "wishbone_bus.h"
-#include "audio_output.h"
+//#include "audio_output.h"
 
 // *****************************************************
 // TODO - update these definitions for your environment!
@@ -75,6 +75,11 @@ struct wavfile_header {
 	char	data_tag[4];
 	int	    data_length;
 };
+
+void writeAudio() {
+    //memcpy(&dac.write_data_[0],samples,buf_size);
+    //dac.Write();
+}
    
 void setEverloop(int red, int green, int blue, int white) {
     for (hal::LedValue& led : image1d.leds) {
@@ -83,7 +88,6 @@ void setEverloop(int red, int green, int blue, int white) {
       led.blue = blue;
       led.white = white;
     }
-
     everloop.Write(&image1d);
 }
 
@@ -126,19 +130,19 @@ int cpp_loop(void)
     //Hmm, is this actually needed and what does it do?
     mics.CalculateDelays(0, 0, 1000, 320 * 1000);  
  
-    hal::AudioOutput dac;
-    dac.Setup(&wb);
-    dac.SetPCMSamplingFrequency(RATE);
-    dac.SetVolumen(100);
-    dac.SetOutputSelector(hal::kHeadPhone);
+  //  hal::AudioOutput dac;
+ //   dac.Setup(&wb);
+ //   dac.SetPCMSamplingFrequency(RATE);
+//    dac.SetVolumen(100);
+//    dac.SetOutputSelector(hal::kHeadPhone);
 
     //TEST, play a sound
-    size_t buf_size = 1024;
-    uint16_t samples[buf_size];
+//    size_t buf_size = 1024;
+//    uint16_t samples[buf_size];
     
-    for(int i=0; i<buf_size; ++i) {
-        samples[i] = cos(440.0*(float)i*3.14159/16000);
-    }
+//    for(int i=0; i<buf_size; ++i) {
+//        samples[i] = cos(440.0*(float)i*3.14159/16000);
+//    }
     
     //memcpy(&dac.write_data_[0],samples,buf_size);
     //dac.Write();
@@ -146,19 +150,20 @@ int cpp_loop(void)
     setEverloop(10,0,0,0);
   
     while (true) {
+        int white = 0;
+        if (!mqttIsConnected()) {
+            white = 10;
+        }   
         if (otaUpdateInProgress()) {
             //updating: WHITE
             setEverloop(0,0,0,10);
-        }
-        if (networkIsConnected() && !otaUpdateInProgress() && !HotwordDetected()) {
+        } else if (networkIsConnected() && !otaUpdateInProgress() && !HotwordDetected()) {
             //connected, not updating but hotword not detected BLUE
-            setEverloop(0,0,10,0);
-        }
-        if (networkIsConnected() && HotwordDetected()) {
+            setEverloop(0,0,10,white);
+        } else if (networkIsConnected() && HotwordDetected()) {
             //connected and hotword detected GREEN
             setEverloop(0,10,0,0);
-        }
-        if (!networkIsConnected()) {
+        } else if (!networkIsConnected()) {
             //not connected: RED
             setEverloop(10,0,0,0);
         }
