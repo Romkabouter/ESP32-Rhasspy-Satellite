@@ -29,4 +29,4 @@ While booting, the same should happen: RED when initializing, then BLUE when con
 
 ## Known issues
 - Reports are made that no connection is made to the network. This seems to be releated to the OTA networktask and mqtt task. I have no solution for this yet. If you are an esp32 expert, please help.
-- In some case the RED and BLUE are switched, this might be releated running outdates FPGA. See this topic: https://www.matrix.one/products/voice
+- In some case the RED and BLUE are switched, this might be releated running outdates FPGA. See this topic: https://community.matrix.one/t/solved-red-and-green-leds-swapped/1439/4
