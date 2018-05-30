@@ -29,5 +29,7 @@ While booting, the same should happen: RED when initializing, then BLUE when con
 
 ## Known issues
 - Reports are made that no connection is made to the network. This seems to be releated to the OTA networktask and mqtt task. I have no solution for this yet. If you are an esp32 expert, please help.
-- In some case the RED and BLUE are switched, this might be releated running outdates FPGA. See this topic: https://community.matrix.one/t/solved-red-and-green-leds-swapped/1439/4
-When I did a fresh install, I got the RED and GREEN switched as well, at this point I do not know how to fix it.
+- When you do a clean Raspian install with only the matrix-creator-init software, the RED and GREEN are probably switched.
+See this topic: https://community.matrix.one/t/solved-red-and-green-leds-swapped/1439/4
+This is because a fix was made in the kernel modules, but not in the matrix-creator-init.
+If you want the leds as I descibed, you can change the setEverloop function, but compiling and installing the latest kernel modules might also bring the solution. See the kernel modules: https://github.com/matrix-io/matrixio-kernel-modules
