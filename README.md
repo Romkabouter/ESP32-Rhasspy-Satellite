@@ -33,3 +33,5 @@ While booting, the same should happen: RED when initializing, then BLUE when con
 See this topic: https://community.matrix.one/t/solved-red-and-green-leds-swapped/1439/4
 This is because a fix was made in the kernel modules, but not in the matrix-creator-init.
 If you want the leds as I descibed, you can change the setEverloop function, but compiling and installing the latest kernel modules might also bring the solution. See the kernel modules: https://github.com/matrix-io/matrixio-kernel-modules
+- I had problems with hotword detection somehow when I followed my steps to the letter with a clean install and an erased esp32. I do not yet understand why. When I redeployed the exact same code with my backup image, all was working fine again. 
+So you might actually find that the hotword does not get detected, I suspect the use of the matrix kernel modules having to do with it, but I am investigating the issue.
