@@ -57,12 +57,14 @@ typedef enum {
 #define MQTT_USER CONFIG_MQTT_USER
 #define MQTT_PASS CONFIG_MQTT_PASS
 #define SITEID CONFIG_SITEID
-#define BUFFER_SIZE 1000 //be sure to create enough buffer
+#define BUFFER_SIZE 50000 //be sure to create enough buffer, also for incoming audio
 #define AP_CONNECTION_ESTABLISHED (1 << 0)
 #define MQTT_CONNECTION_ESTABLISHED (1 << 0)
+#define SEND_FINISHED (1 << 0)
 #define HOTWORD_DETECTED (1 << 0)
 static EventGroupHandle_t sEventGroup;
 static EventGroupHandle_t mqttEventGroup;
+static EventGroupHandle_t sendEventGroup;
 static EventGroupHandle_t hwEventGroup;
 
 // Indicates that we should trigger a re-boot after sending the response.
@@ -87,6 +89,7 @@ void networkInit()
 
     sEventGroup = xEventGroupCreate();
     mqttEventGroup = xEventGroupCreate();
+    sendEventGroup = xEventGroupCreate();
     hwEventGroup = xEventGroupCreate();
     xTaskCreate(&networkTask, "networkTask", 32768, NULL, 5, NULL);
     
@@ -127,6 +130,11 @@ int HotwordDetected()
 int mqttIsConnected()
 {
     return xEventGroupGetBits(mqttEventGroup) & MQTT_CONNECTION_ESTABLISHED;
+}
+
+int sendFinished()
+{
+    return xEventGroupGetBits(sendEventGroup) & SEND_FINISHED;
 }
 
 static void networkTask(void *pvParameters)
@@ -404,7 +412,7 @@ static esp_err_t eventHandler(void *ctx, system_event_t *event)
             
         case SYSTEM_EVENT_STA_GOT_IP:
             ESP_LOGI(TAG, "eventHandler: SYSTEM_EVENT_STA_GOT_IP");
-            esp_mqtt_start(MQTT_HOST, MQTT_PORT, "esp-mqtt", MQTT_USER, MQTT_PASS);
+            esp_mqtt_start(MQTT_HOST, MQTT_PORT, "MatrixVoice", MQTT_USER, MQTT_PASS);
             networkSetConnected(1);
             break;
             
@@ -455,6 +463,15 @@ static void MqttSetConnected(uint8_t c)
     }
 }
 
+static void SetsendFinished(uint8_t c)
+{
+    if (c) {
+        xEventGroupSetBits(sendEventGroup, SEND_FINISHED);
+    } else {
+        xEventGroupClearBits(sendEventGroup, SEND_FINISHED);
+    }
+}
+
 static void HotWordSetDetected(uint8_t c)
 {
     if (c) {
@@ -471,14 +488,15 @@ static void mqtt_status_cb(esp_mqtt_status_t status) {
         //set connected to true to be able to send packets
         esp_mqtt_subscribe("hermes/hotword/toggleOff", 0);
         esp_mqtt_subscribe("hermes/hotword/toggleOn", 0);
-        esp_mqtt_subscribe("hermes/audioServer/huiskamer/playBytes/#",0);
+      //  esp_mqtt_subscribe("hermes/audioServer/huiskamer/playBytes/#",0);
         MqttSetConnected(1);
         break;
     case ESP_MQTT_STATUS_DISCONNECTED:
         //Not connected anymore, stop trying to send
         MqttSetConnected(0);
         //reconnect
-        esp_mqtt_start(MQTT_HOST, MQTT_PORT, "esp-mqtt", MQTT_USER, MQTT_PASS);
+        esp_mqtt_stop();
+        esp_mqtt_start(MQTT_HOST, MQTT_PORT, "MatrixVoice", MQTT_USER, MQTT_PASS);
         break;
     }
 }
@@ -490,6 +508,7 @@ static void mqtt_message_cb(const char *topic, uint8_t *payload, size_t len) {
         site = cJSON_GetObjectItemCaseSensitive(json, "siteId");
         if (strcmp(site->valuestring,SITEID) == 0) {
           HotWordSetDetected(1);
+          //SetsendFinished(0);
         }    
         cJSON_Delete(json);
     } else if ((int)strstr (topic, "toggleOn") > 0) {
@@ -497,7 +516,27 @@ static void mqtt_message_cb(const char *topic, uint8_t *payload, size_t len) {
         site = cJSON_GetObjectItemCaseSensitive(json, "siteId");
         if (strcmp(site->valuestring,SITEID) == 0) {
          HotWordSetDetected(0);
+         SetsendFinished(0);
         }
         cJSON_Delete(json);
     }
+    /* else if ((int)strstr (topic, "playBytes") > 0) {
+        char str1[83], str2[36], str3[40];
+        memset(&str1[0], 0, sizeof(str1));
+        memset(&str2[0], 0, sizeof(str2));
+        memset(&str3[0], 0, sizeof(str3));
+        char * ptr;
+        int ch = '/';
+        //get the last part of the topic, with /
+        ptr = strrchr( topic, ch );
+        //remove leading /
+        memmove(ptr, ptr+1, strlen(ptr));
+        strcpy(str1, "{\"id\":\"");
+        //copt the topic suffix to the id part
+        strcpy(str2, ptr);
+        strcat(str1, str2);
+        strcpy(str3, "\",\"siteId\":\"huiskamer\",\"sessionId\":null}");
+        strcat(str1, str3);
+        esp_mqtt_publish("hermes/audioServer/huiskamer/playFinished", (uint8_t *)str1, strlen(str1), 0, false);
+    }*/
 }

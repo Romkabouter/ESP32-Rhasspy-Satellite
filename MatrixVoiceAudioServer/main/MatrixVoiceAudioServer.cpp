@@ -26,6 +26,9 @@
 #include "nvs_flash.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+//#include "WiFi.h"
+//#include "WiFiEventHandler.h"
+//#include "PubSubClient.h"
 
 extern "C" {
     #include <string.h>
@@ -34,12 +37,12 @@ extern "C" {
     #include "ota_update.h"
 }
 
+#include "wishbone_bus.h"
 #include "everloop.h"
 #include "everloop_image.h"
-#include "voice_memory_map.h"
 #include "microphone_array.h"
-#include "wishbone_bus.h"
-//#include "audio_output.h"
+//#include "microphone_core.h"
+#include "voice_memory_map.h"
 
 // *****************************************************
 // TODO - update these definitions for your environment!
@@ -53,27 +56,34 @@ extern "C" {
 #define CHANNELS 1
 
 namespace hal = matrix_hal;
-hal::MicrophoneArray mics;
 hal::Everloop everloop;
 hal::EverloopImage image1d;
+hal::MicrophoneArray mics;
+
+//std::string ip					= "192.168.178.81";
+//uint16_t port 					= 1883;
+//std::string deviceName			= "MatrixVoice";
+bool sendMessage = true;
+
+//PubSubClient mqtt(ip, port);
 
 uint16_t voicebuffer[CHUNK];
 uint8_t voicemapped[CHUNK*WIDTH];
 
 struct wavfile_header {
-	char	riff_tag[4];
-	int	    riff_length;
-	char	wave_tag[4];
-	char	fmt_tag[4];
-	int	    fmt_length;
-	short	audio_format;
-	short	num_channels;
-	int	    sample_rate;
-	int	    byte_rate;
-	short	block_align;
-	short	bits_per_sample;
-	char	data_tag[4];
-	int	    data_length;
+	char	riff_tag[4];  //4
+	int	    riff_length;  //4
+	char	wave_tag[4];  //4
+	char	fmt_tag[4];   //4
+	int	    fmt_length;   //4
+	short	audio_format; //2
+	short	num_channels; //2
+	int	    sample_rate;  //4
+	int	    byte_rate;    //4
+	short	block_align;  //2
+	short	bits_per_sample;  //2
+	char	data_tag[4]; //4
+	int	    data_length; //4
 };
 
 void writeAudio() {
@@ -120,39 +130,44 @@ int cpp_loop(void)
     // ---------------------------------------------------------------------------
     hal::WishboneBus wb;
     wb.Init();
+
     //setup everloop
     everloop.Setup(&wb);
+
     setEverloop(0,0,0,0);
     //setup mics
     mics.Setup(&wb);
+    
+ //   hal::MicrophoneCore mic_core(mics);
+ //   mic_core.Setup(&wb);
+    
     mics.SetSamplingRate(RATE);
     mics.ReadConfValues();
     //Hmm, is this actually needed and what does it do?
     mics.CalculateDelays(0, 0, 1000, 320 * 1000);  
  
-  //  hal::AudioOutput dac;
- //   dac.Setup(&wb);
- //   dac.SetPCMSamplingFrequency(RATE);
-//    dac.SetVolumen(100);
-//    dac.SetOutputSelector(hal::kHeadPhone);
-
-    //TEST, play a sound
-//    size_t buf_size = 1024;
-//    uint16_t samples[buf_size];
-    
-//    for(int i=0; i<buf_size; ++i) {
-//        samples[i] = cos(440.0*(float)i*3.14159/16000);
-//    }
-    
-    //memcpy(&dac.write_data_[0],samples,buf_size);
-    //dac.Write();
- 
     setEverloop(10,0,0,0);
   
     while (true) {
+//        if (networkIsConnected()) {
+//            setEverloop(0,0,10,0);
+//        }
+        //if (sendFinished()) {
+            //find the endpart of the topic, this is the ID in the message
+            //char* id = strstr (topic,"playBytes");
+            //std::string t = std::string("hermes/audioServer/") + SITEID + std::string("/playFinished")
+            //esp_mqtt_publish("hermes/audioServer/huiskamer/playFinished", "world", sizeof(id),0, false);
+            //esp_mqtt_publish("hermes/audioServer/huiskamer/playFinished", (uint8_t *)"world", 5, 0, false);
+            //cJSON *json = cJSON_Parse((const char *)payload);
+            //site = cJSON_GetObjectItemCaseSensitive(json, "siteId");
+            //cJSON_Delete(json);
+            //sendFinished(0);
+            //sendMessage = false;
+        //}   
+
         int white = 0;
         if (!mqttIsConnected()) {
-            white = 10;
+            white = 5;
         }   
         if (otaUpdateInProgress()) {
             //updating: WHITE
@@ -173,8 +188,9 @@ int cpp_loop(void)
         
             //NumberOfSamples() = kMicarrayBufferSize / kMicrophoneChannels = 2048 / 8 = 256
             //These are 256 samples of 2 bytes
-            for (uint32_t s = 0; s < mics.NumberOfSamples(); s++) {
+            for (uint32_t s = 0; s < CHUNK; s++) {
                 voicebuffer[s] = mics.Beam(s);
+                //voicebuffer[s] = mics.At(s,0);
             }
         
             //voicebuffer will hold 256 samples of 2 bytes, but we need it as 1 byte
@@ -190,7 +206,20 @@ int cpp_loop(void)
             std::string topic = std::string("hermes/audioServer/") + SITEID + std::string("/audioFrame");
 
             esp_mqtt_publish(topic.c_str(), (uint8_t *)payload, sizeof(payload),0, false);
-        }
+
+            //also send to second half as a wav
+            for (uint32_t s = CHUNK; s < CHUNK*WIDTH; s++) {
+                voicebuffer[s-CHUNK] = mics.Beam(s);
+            }
+        
+            memcpy(voicemapped,voicebuffer,CHUNK*WIDTH);
+        
+            //Add the wave header
+            memcpy(payload,&header,sizeof(header));
+            memcpy(&payload[sizeof(header)], voicemapped, sizeof(voicemapped));
+    
+            esp_mqtt_publish(topic.c_str(), (uint8_t *)payload, sizeof(payload),0, false);
+       }
     }    
 }
 

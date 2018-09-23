@@ -228,7 +228,7 @@ static void esp_mqtt_process(void *p) {
     esp_mqtt_dispatch_events();
 
     // yield to other processes
-    vTaskDelay(1);
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 
   // mutex has already been acquired above

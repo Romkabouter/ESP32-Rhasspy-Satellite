@@ -1,37 +1,48 @@
 # Matrix-Voice-ESP32-MQTT-Audio-Streamer
 
 The Audio Steamer is designed to work as an Snips Audio Server, see https://snips.ai/
-Feel free to make comments, I am not a c / c++ programmer so a lot well be not very neat programming.
+Feel free to make comments.
 
-To be able to run it, first try to get the demo esp32 of Matrix running, see https://www.hackster.io/matrix-labs/get-started-w-esp32-on-the-matrix-voice-d01e0d
-If you have got that running, you will be able to flash this software as well.
+I have switched from c++ to Arduino IDE, because there were better solutions for the MQTT stuff.
+In the folder "MatrixVoiceAudioServerArduino", there are three bin files:
+- bootloader.bin
+- partitions_singleapp.bin
+- MatrixVoiceAudioServerArduino.ino.esp32.bin
 
-I have implemented OTA, for which I have used this repo: https://github.com/classycodeoss/esp32-ota
-To be able to do that, follow these steps:
+The first two I copied directly from the build/bootloader and build folders from the ESP32 demo.
+If you want to build and use your own, get the ESP32 demo running:
+https://www.hackster.io/matrix-labs/get-started-w-esp32-on-the-matrix-voice-d01e0d
+In the folder mic_energy/build you will find the files I uses.
 
-- Connect your Voice with a Raspberry Pi, you should probably already have that when you were trying the esp32 demo bij Hackster.io
+The third is a compiled version.
+
+## Get started
+
+To get the code running I suggest you first reset the Voice if you have flashed it previously
+
+- Connect your Voice with a Raspberry Pi
 - ssh into the pi, execute this command: voice_esp32_enable. If you get a permission denied, execute the command again. 
 - esptool.py --chip esp32 --port /dev/ttyS0 --baud 115200 --before default_reset --after hard_reset erase_flash
-- Pull the plug on the Pi, and restart it.
-- In this repo, do a make menuconfig, go to the Partition Table entry and change it to "Factory App, two OTA definitions"
-- Enter MatrixVoiceAudioServer and enter the credentials. I have not tried it with a mqtt password, but it should work.
-- Exit the config and edit the make/deploy.mk file. Change to IP address to the IP your Pi is on.
-- make and make deploy
+- Reboot the Pi.
 
-After the flashing, to led ring should start with RED, and when connected to your wifi, it should become BLUE.
-If connected to the MQTT broker your Snips is listening to, the ledring should become GREEN when the hotword is detected and then BLUE again.
+Start your Arduino IDE, copy the folder "hal" to your libraries folder.
+You will also need these libaries:
+- https://github.com/marvinroger/async-mqtt-client
+- https://github.com/me-no-dev/AsyncTCP
+- https://github.com/256dpi/arduino-mqtt/
+- Change the MQTT_IP, MQTT_PORT, MQTT_HOST, SITEID, SSID and PASSWORD to fit your needs
+- Compile => Do an "Export compiled libary"! This will overwrite the "MatrixVoiceAudioServerArduino.ino.esp32.bin" file
+- In the file deploy.sh, change to IP address to the IP your Pi is on.
+- Open a terminal (Linux and Mac should work, I use Mac), change to the folder where this code is and run: ./deploy.sh
+- If you have done the ESP32 demo, you should see the familiar: "esptool.py wrapper for MATRIX Voice" messages.
+- Watch how it flashes and when it restarts, the ledring should light up: first red (wifi disconnected), then blue (connected)
+- When your hotword is detected, it should become green and return to blue after command or timeout
 
-Test out the OTA flashing by doing: python update_firmware.py ipadress-of-your-espvoice build/MatrixVoiceAudioServer.bin
-The ledring should become WHITE and some console should be printed, see https://github.com/classycodeoss/esp32-ota
+## OTA c++ version
 
-When all this was working correctly, you can unplug the Pi, remove the Voice and plugin the adapter to the Voice
-While booting, the same should happen: RED when initializing, then BLUE when connected.
+The OTA version is not maintained at the moment, but I might in the future get it going again. 
+The reason is that I have put a lot of time in getting the playBytes to work on the ESP32. Wave files are published to that topic and I did a lot of research and have implemented an asynchronus MQTT client for this. Otherwise the voice would choke and reboot on those large messages due to limited memory.
+The last commited version will probably NOT work
 
 ## Known issues
-- Reports are made that no connection is made to the network. This seems to be releated to the OTA networktask and mqtt task. I have no solution for this yet. If you are an esp32 expert, please help.
-- When you do a clean Raspian install with only the matrix-creator-init software, the RED and GREEN are probably switched.
-See this topic: https://community.matrix.one/t/solved-red-and-green-leds-swapped/1439/4
-This is because a fix was made in the kernel modules, but not in the matrix-creator-init.
-If you want the leds as I descibed, you can change the setEverloop function, but compiling and installing the latest kernel modules might also bring the solution. See the kernel modules: https://github.com/matrix-io/matrixio-kernel-modules
-- I had problems with hotword detection somehow when I followed my steps to the letter with a clean install and an erased esp32. I do not yet understand why. When I redeployed the exact same code with my backup image, all was working fine again. 
-So you might actually find that the hotword does not get detected, I suspect the use of the matrix kernel modules having to do with it, but I am investigating the issue.
+- Sometimes the Voice reboots after the hotword is detected. I have had other stability issues as well but do not have found a cause or solution yet.

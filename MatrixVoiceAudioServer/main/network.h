@@ -33,5 +33,6 @@ void networkConnect(const char *ssid, const char *password);
 int networkIsConnected();
 int HotwordDetected();
 int mqttIsConnected();
+int sendFinished();
 
 #endif // __NETWORK_H__
