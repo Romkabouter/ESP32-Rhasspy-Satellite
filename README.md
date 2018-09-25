@@ -29,7 +29,7 @@ Start your Arduino IDE, copy the folder "hal" to your libraries folder.
 You will also need these libaries:
 - https://github.com/marvinroger/async-mqtt-client
 - https://github.com/me-no-dev/AsyncTCP
-- https://github.com/256dpi/arduino-mqtt/
+- hhttps://github.com/knolleary/pubsubclient
 - Change the MQTT_IP, MQTT_PORT, MQTT_HOST, SITEID, SSID and PASSWORD to fit your needs
 - Compile => Do an "Export compiled libary"! This will overwrite the "MatrixVoiceAudioServerArduino.ino.esp32.bin" file
 - In the file deploy.sh, change to IP address to the IP your Pi is on.
@@ -45,4 +45,4 @@ The reason is that I have put a lot of time in getting the playBytes to work on 
 The last commited version will probably NOT work
 
 ## Known issues
-- Sometimes the Voice reboots after the hotword is detected. I have had other stability issues as well but do not have found a cause or solution yet.
+- Sometimes not all leds light up, but only 2/3 or so. Does not seem to affect the functioning.
