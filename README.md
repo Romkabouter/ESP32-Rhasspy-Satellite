@@ -4,6 +4,7 @@ The Audio Steamer is designed to work as an Snips Audio Server, see https://snip
 Feel free to make comments.
 
 I have switched from c++ to Arduino IDE, because there were better solutions for the MQTT stuff.
+
 In the folder "MatrixVoiceAudioServerArduino", there are three bin files:
 - bootloader.bin
 - partitions_singleapp.bin
