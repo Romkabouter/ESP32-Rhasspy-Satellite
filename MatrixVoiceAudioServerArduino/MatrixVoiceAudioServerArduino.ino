@@ -33,12 +33,11 @@ extern "C" {
 #include "microphone_array.h"
 #include "microphone_core.h"
 #include "voice_memory_map.h"
+#include "config.h"
 
 //Some needed defines, should be obvious which ones to change
 #define RATE 16000
 #define SITEID "matrixvoice"
-#define SSID "YourSSID"
-#define PASSWORD "SecretPassword"
 #define MQTT_IP IPAddress(192, 168, 178, 194)
 #define MQTT_HOST "192.168.178.194"
 #define MQTT_PORT 1883
@@ -212,7 +211,8 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
     } else if (topicstr.indexOf("toggleOn") > 0) {
       HotWordSetDetected(0);
     } else if (topicstr.indexOf("playBytes") > 0) {
-      String s = "{\"id\":\"" + topicstr.substring(39) + "\",\"siteId\":\"" + SITEID + "\",\"sessionId\":null}";
+      int pos = 19 + String(SITEID).length() + 11;
+      String s = "{\"id\":\"" + topicstr.substring(pos) + "\",\"siteId\":\"" + SITEID + "\",\"sessionId\":null}";
       if (asyncClient.connected()) {
         asyncClient.publish(playFinishedTopic.c_str(), 0, false, s.c_str());
       }
