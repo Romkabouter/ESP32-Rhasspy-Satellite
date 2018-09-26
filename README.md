@@ -16,6 +16,14 @@ In the folder mic_energy/build you will find the files I uses.
 
 The third is a compiled version.
 
+## Features
+
+- Runs standalone, NO raspberry Pi is needed after flashing this program
+- Ledring starts RED (no wifi connection), then turns BLUE (Idle mode, with wifi connection)
+- Ledring turns GREEN when the hotword is detected, back to BLUE when going to idle
+- Uses an asynchronous MQTT client for the playBytes topic (large messages which cannot be handled my synchronous clients)
+- Uses a synchronous MQTT client for the audiostream.
+
 ## Get started
 
 To get the code running I suggest you first reset the Voice if you have flashed it previously
@@ -31,6 +39,7 @@ You will also need these libaries:
 - https://github.com/me-no-dev/AsyncTCP
 - hhttps://github.com/knolleary/pubsubclient
 - Change the MQTT_IP, MQTT_PORT, MQTT_HOST, SITEID, SSID and PASSWORD to fit your needs
+- Change the MQTT_MAX_PACKET_SIZE in PubSubClient.h to 2000: See https://github.com/knolleary/pubsubclient (limitations)
 - Compile => Do an "Export compiled libary"! This will overwrite the "MatrixVoiceAudioServerArduino.ino.esp32.bin" file
 - In the file deploy.sh, change to IP address to the IP your Pi is on.
 - Open a terminal (Linux and Mac should work, I use Mac), change to the folder where this code is and run: ./deploy.sh
@@ -42,7 +51,8 @@ You will also need these libaries:
 
 The OTA version is not maintained at the moment, but I might in the future get it going again. 
 The reason is that I have put a lot of time in getting the playBytes to work on the ESP32. Wave files are published to that topic and I did a lot of research and have implemented an asynchronus MQTT client for this. Otherwise the voice would choke and reboot on those large messages due to limited memory.
-The last commited version will probably NOT work
+The last commited version will probably NOT work.
+I am working on an OTA version via the Arduino IDE
 
 ## Known issues
-- Sometimes not all leds light up, but only 2/3 or so. Does not seem to affect the functioning.
+- Sometimes not all leds light up, but only 2/3 or so. Does not seem to have any effect the functioning.
