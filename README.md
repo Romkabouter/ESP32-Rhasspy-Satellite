@@ -1,9 +1,58 @@
 # Matrix-Voice-ESP32-MQTT-Audio-Streamer
 
 The Audio Steamer is designed to work as an Snips Audio Server, see https://snips.ai/
-Feel free to make comments.
+Please raise an issue if some of the steps do not work or if they are unclear.
 
-I have switched from c++ to Arduino IDE, because there were better solutions for the MQTT stuff.
+## Features
+
+- Runs standalone, NO raspberry Pi is needed after flashing this program
+- Ledring starts RED (no wifi connection), then turns BLUE (Idle mode, with wifi connection)
+- Ledring turns GREEN when the hotword is detected, back to BLUE when going to idle
+- Uses an asynchronous MQTT client for the playBytes topic (large messages which cannot be handled my synchronous clients)
+- Uses a synchronous MQTT client for the audiostream.
+- OTA Updating 
+
+## Get started
+
+To get the code running I suggest you first reset the Voice if you have flashed it previously
+
+- Follow Step 1 and 2 (or all steps) from this guide https://www.hackster.io/matrix-labs/get-started-w-esp32-on-the-matrix-voice-d01e0d.
+- ssh into the pi, execute this command: voice_esp32_enable. If you get a permission denied, execute the command again. 
+- esptool.py --chip esp32 --port /dev/ttyS0 --baud 115200 --before default_reset --after hard_reset erase_flash
+- Reboot the Pi.
+
+## OTA (Over the Air) Update version
+
+In the folder "MatrixVoiceAudioServer", there are two bin files:
+- bootloader.bin
+- partitions_two_ota.bin
+These files are needed in order to do the first flashing. You can build your own versions of it by checking out the OTABuilder folder.
+In there is a program in c++, which does nothing but if you do a make menuconfig you will see that the partition is set to OTA.
+When you do a make, the partitions_two_ota.bin will be in the build folder and the bootloader.bin in the build/bootloader folder.
+
+To flash the OTA version for the first time, attach the Voice to a Raspberry Pi. 
+- Copy the folder "hal" to your Arduino IDE libraries folder
+- Download and add to Arduino IDE: https://github.com/marvinroger/async-mqtt-client
+- Download and add to Arduino IDE: https://github.com/me-no-dev/AsyncTCP
+- Download and add to Arduino IDE: https://github.com/knolleary/pubsubclient
+- Open the MatrixVoiceAudioServer.ino in the Arduino IDE
+- Select ESP32 Dev Module as Board, set flash size to 4MB and Upload speed to 115200
+- Change the MQTT_IP, MQTT_PORT, MQTT_HOST, SITEID, SSID and PASSWORD to fit your needs. SSID and PASSWORD are in config.h
+- Change the MQTT_MAX_PACKET_SIZE in PubSubClient.h to 2000: See https://github.com/knolleary/pubsubclient (limitations)
+- Compile => Do an "Export compiled libary"
+- In the file deploy.sh, change to IP address to the IP your Pi is on.
+- Open a terminal (Linux and Mac should work, I use Mac), change to the folder where this code is and run: sh deploy.sh
+- If you have done the ESP32 demo, you should see the familiar: "esptool.py wrapper for MATRIX Voice" messages.
+- Watch how it flashes and when it restarts, the ledring should light up: first red (wifi disconnected), then blue (connected)
+- Shutdown the Pi and Arduino IDE
+- Remove the voice from the Pi and plug the power into the Voice with a micro usb cable, the Voice should start
+- Open your Arduino IDE again, after a while the Matrix Voice should show up as a network port, select this port
+- Make a change (or not) and do a Sketch -> Upload. The leds will turn WHITE
+- Sometimes uploading fails, just retry untill it succeeds
+
+## No OTA Version
+
+This version is basically the same, but will not be updated with new features
 
 In the folder "MatrixVoiceAudioServerArduino", there are three bin files:
 - bootloader.bin
@@ -15,45 +64,8 @@ If you want to build and use your own, get the ESP32 demo running:
 https://www.hackster.io/matrix-labs/get-started-w-esp32-on-the-matrix-voice-d01e0d
 In the folder mic_energy/build you will find the files I uses.
 
-The third is a compiled version.
-
-## Features
-
-- Runs standalone, NO raspberry Pi is needed after flashing this program
-- Ledring starts RED (no wifi connection), then turns BLUE (Idle mode, with wifi connection)
-- Ledring turns GREEN when the hotword is detected, back to BLUE when going to idle
-- Uses an asynchronous MQTT client for the playBytes topic (large messages which cannot be handled my synchronous clients)
-- Uses a synchronous MQTT client for the audiostream.
-
-## Get started
-
-To get the code running I suggest you first reset the Voice if you have flashed it previously
-
-- Connect your Voice with a Raspberry Pi
-- ssh into the pi, execute this command: voice_esp32_enable. If you get a permission denied, execute the command again. 
-- esptool.py --chip esp32 --port /dev/ttyS0 --baud 115200 --before default_reset --after hard_reset erase_flash
-- Reboot the Pi.
-
-Start your Arduino IDE, copy the folder "hal" to your libraries folder.
-You will also need these libaries:
-- https://github.com/marvinroger/async-mqtt-client
-- https://github.com/me-no-dev/AsyncTCP
-- hhttps://github.com/knolleary/pubsubclient
-- Change the MQTT_IP, MQTT_PORT, MQTT_HOST, SITEID, SSID and PASSWORD to fit your needs
-- Change the MQTT_MAX_PACKET_SIZE in PubSubClient.h to 2000: See https://github.com/knolleary/pubsubclient (limitations)
-- Compile => Do an "Export compiled libary"! This will overwrite the "MatrixVoiceAudioServerArduino.ino.esp32.bin" file
-- In the file deploy.sh, change to IP address to the IP your Pi is on.
-- Open a terminal (Linux and Mac should work, I use Mac), change to the folder where this code is and run: ./deploy.sh
-- If you have done the ESP32 demo, you should see the familiar: "esptool.py wrapper for MATRIX Voice" messages.
-- Watch how it flashes and when it restarts, the ledring should light up: first red (wifi disconnected), then blue (connected)
-- When your hotword is detected, it should become green and return to blue after command or timeout
-
-## OTA c++ version
-
-The OTA version is not maintained at the moment, but I might in the future get it going again. 
-The reason is that I have put a lot of time in getting the playBytes to work on the ESP32. Wave files are published to that topic and I did a lot of research and have implemented an asynchronus MQTT client for this. Otherwise the voice would choke and reboot on those large messages due to limited memory.
-The last commited version will probably NOT work.
-I am working on an OTA version via the Arduino IDE
+The third is a compiled version, see OTA version on how to flash.
 
 ## Known issues
-- Sometimes not all leds light up, but only 2/3 or so. Does not seem to have any effect the functioning.
+- Sometimes not all leds light up, but only 2/3 or so. Does not seem to have any effect on functionality
+- Uploading a sketch sometimes fails (just retry until succesfull)
