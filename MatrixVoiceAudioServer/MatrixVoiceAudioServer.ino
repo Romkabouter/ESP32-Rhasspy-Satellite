@@ -3,12 +3,13 @@
  * 
  * This program is written to be a streaming audio server running on the Matrix Voice.
  This is typically used for Snips.AI, it will then be able to replace
- * the Snips Audio Server, by publishing small wave messages to the hermes proticol
+ * the Snips Audio Server, by publishing small wave messages to the hermes protocol
  * See https://snips.ai/ for more information
+ * The audio server splits the stream in 2 parts, so that it will fit the default configuration of 256
  * 
  * Author:  Paul Romkes
  * Date:    September 2018
- * Version: 3
+ * Version: 3.2
  * 
  * Changelog:
  * ==========
@@ -24,7 +25,9 @@
  *  - Only listen to SITEID to toggle hotword
  *  - Got rid of String, leads to Heap Fragmentation
  *  - Add dynamic brihtness, post {"brightness": 50 } to SITEID/everloop
- *  - Fix stability for good, using semaphores
+ *  - Fix stability, using semaphores
+ * v3.2:
+ *  - Add dynamic colors, see readme for documentation
  * ************************************************************************ */
 #include <WiFi.h>
 #include <ESPmDNS.h>
@@ -98,7 +101,7 @@ static uint8_t payload[sizeof(header)+(CHUNK*WIDTH)];
 static uint8_t payload2[sizeof(header)+(CHUNK*WIDTH)];
 
 //Colors. TODO: implement code like bightnesss for color changing without coding
-int hw_colors_on[4] = {0,255,0,0};
+int hotword_colors[4] = {0,255,0,0};
 int idle_colors[4] = {0,0,255,0};
 int disconnect_colors[4] = {255,0,0,0};
 int update_colors[4] = {0,0,0,255};
@@ -107,6 +110,7 @@ bool DEBUG = false; //If set to true, code will post several messages to topics 
 bool boot = true;
 bool disconnected = false;
 bool hotword_detected = false;
+bool update = false;
 
 //Dynamic topics for MQTT
 std::string audioFrameTopic = std::string("hermes/audioServer/") + SITEID + std::string("/audioFrame");
@@ -114,12 +118,12 @@ std::string playFinishedTopic = std::string("hermes/audioServer/") + SITEID + st
 std::string playBytesTopic = std::string("hermes/audioServer/") + SITEID + std::string("/playBytes/#");
 std::string toggleOffTopic = "hermes/hotword/toggleOff";
 std::string toggleOnTopic = "hermes/hotword/toggleOn";
-std::string hotwordTopic = SITEID + std::string("/colors/hotword");
-std::string idleTopic = SITEID + std::string("/colors/idle");
-std::string brightnessTopic = SITEID + std::string("/everloop");
+std::string everloopTopic = SITEID + std::string("/everloop");
 std::string debugTopic = "debug/asynch/status";
+std::string debugAudioTopic = "debug/audioserver/status";
 
-
+//This is used to be able to change brightness, while keeping the colors appear the same
+//Called gamma correction, check this https://learn.adafruit.com/led-tricks-gamma-correction/the-issue
 const uint8_t PROGMEM gamma8[] = {
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  1,  1,  1,
@@ -144,14 +148,10 @@ const uint8_t PROGMEM gamma8[] = {
 // being also used by the audiostream. A mutex task has been implemented for that
 // ---------------------------------------------------------------------------
 void setEverloop(int red, int green, int blue, int white) {
-    int r = floor(brightness * red / 100);
-    r = pgm_read_byte(&gamma8[r]);
-    int g = floor(brightness * green / 100);
-    g = pgm_read_byte(&gamma8[g]);
-    int b = floor(brightness * blue / 100);
-    b = pgm_read_byte(&gamma8[b]);
-    int w = floor(brightness * white / 100);
-    w = pgm_read_byte(&gamma8[w]);
+    int r = pgm_read_byte(&gamma8[(int)round(brightness * red / 100)]);
+    int g = pgm_read_byte(&gamma8[(int)floor(brightness * green / 100)]);
+    int b = pgm_read_byte(&gamma8[(int)floor(brightness * blue / 100)]);
+    int w = pgm_read_byte(&gamma8[(int)floor(brightness * white / 100)]);
     for (hal::LedValue& led : image1d.leds) {
       led.red = r;
       led.green = g;
@@ -208,10 +208,8 @@ void onMqttConnect(bool sessionPresent) {
   asyncClient.subscribe(toggleOffTopic.c_str(),0);
   asyncClient.subscribe(toggleOnTopic.c_str(),0);
   
-  //subscribe to matrixvoice topcis
-  asyncClient.subscribe(hotwordTopic.c_str(),0);
-  asyncClient.subscribe(idleTopic.c_str(),0);
-  asyncClient.subscribe(brightnessTopic.c_str(),0);
+  //subscribe to matrixvoice topics
+  asyncClient.subscribe(everloopTopic.c_str(),0);
   if (DEBUG) {
     if (boot) {
       boot = false;
@@ -229,9 +227,7 @@ void onMqttConnect(bool sessionPresent) {
 // ---------------------------------------------------------------------------
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
   Serial.println("Disconnected from MQTT.");
-  if (DEBUG) {
-    disconnected = true;
-  }
+  disconnected = true;
   if (WiFi.isConnected()) {
     xTimerStart(mqttReconnectTimer, 0);
   }
@@ -273,13 +269,37 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
       split_message(payload, idle_colors, 4);
       //setEverloop(idle_colors[0],idle_colors[1],idle_colors[2],idle_colors[3]);
  */   
-    } else if (topicstr.find(brightnessTopic.c_str()) != std::string::npos) {
-      //payload[length] = '\0';
-      StaticJsonDocument<200> jsonBuffer;
-      DeserializationError error = deserializeJson(jsonBuffer, (char *) payload);
-      if (!error) {
-        JsonObject root = jsonBuffer.as<JsonObject>();
-        brightness = root["brightness"];
+    } else if (topicstr.find(everloopTopic.c_str()) != std::string::npos) {
+      StaticJsonBuffer<300> jsonBuffer;
+      JsonObject& root = jsonBuffer.parseObject((char *) payload);
+      if (root.success()) {
+        if (root.containsKey("brightness")) {
+          brightness = root["brightness"];          
+        }
+        if (root.containsKey("hotword")) {
+          hotword_colors[0] = root["hotword"][0];          
+          hotword_colors[1] = root["hotword"][1];          
+          hotword_colors[2] = root["hotword"][2];          
+          hotword_colors[3] = root["hotword"][3];          
+        }
+        if (root.containsKey("idle")) {
+          idle_colors[0] = root["idle"][0];          
+          idle_colors[1] = root["idle"][1];          
+          idle_colors[2] = root["idle"][2];          
+          idle_colors[3] = root["idle"][3];          
+        }
+        if (root.containsKey("disconnect")) {
+          disconnect_colors[0] = root["disconnect"][0];          
+          disconnect_colors[1] = root["disconnect"][1];          
+          disconnect_colors[2] = root["disconnect"][2];          
+          disconnect_colors[3] = root["disconnect"][3];          
+        }
+        if (root.containsKey("update")) {
+          update_colors[0] = root["update"][0];          
+          update_colors[1] = root["update"][1];          
+          update_colors[2] = root["update"][2];          
+          update_colors[3] = root["update"][3];          
+        }
         xEventGroupSetBits(everloopGroup, EVERLOOP);
       }
     }
@@ -345,6 +365,7 @@ void Audiostream( void * parameter ) {
 void everloopTask(void *pvParam){
     while(1){
       xEventGroupWaitBits(everloopGroup,EVERLOOP,true,true,portMAX_DELAY); //Wait for the bit before updating
+      Serial.println("Updating everloop");
       //Implementation of Semaphore, otherwise the ESP will crash due to read of the mics
       if ( xSemaphoreTake( wbSemaphore, ( TickType_t ) 100 ) == pdTRUE )
       {
@@ -353,11 +374,16 @@ void everloopTask(void *pvParam){
         int g = 0;
         int b = 0;
         int w = 0;
-        if (hotword_detected) {
-          r = hw_colors_on[0];
-          g = hw_colors_on[1];
-          b = hw_colors_on[2];
-          w = hw_colors_on[3];
+        if (update) {
+          r = update_colors[0];
+          g = update_colors[1];
+          b = update_colors[2];
+          w = update_colors[3];
+        } else if (hotword_detected) {
+          r = hotword_colors[0];
+          g = hotword_colors[1];
+          b = hotword_colors[2];
+          w = hotword_colors[3];
         } else {
           r = idle_colors[0];
           g = idle_colors[1];
@@ -381,6 +407,7 @@ void everloopTask(void *pvParam){
         everloop.Write(&image1d);
         xSemaphoreGive( wbSemaphore ); //Free for all
         xEventGroupClearBits(everloopGroup,EVERLOOP); //Clear the everloop bit
+        Serial.println("Updating done");
       }
       vTaskDelay(1); //Delay a tick, for better stability 
     }
@@ -467,10 +494,11 @@ void setup() {
 
   ArduinoOTA
     .onStart([]() {
-      //everloop_colors = update_colors;
+      update = true;
       xEventGroupSetBits(everloopGroup, EVERLOOP);
     })
     .onEnd([]() {
+      update = false;
       Serial.println("\nEnd");
     })
     .onProgress([](unsigned int progress, unsigned int total) {
@@ -492,7 +520,7 @@ void loop() {
   ArduinoOTA.handle();
   if (!audioServer.connected()) {
     if (asyncClient.connected() && DEBUG) {
-      asyncClient.publish("debug/audioserver/status",0, false, "reconnect");
+      asyncClient.publish(debugAudioTopic.c_str(),0, false, "reconnect");
     }
     connectAudio();
   }

@@ -11,7 +11,7 @@ Please raise an issue if some of the steps do not work or if they are unclear.
 - Uses an asynchronous MQTT client for the playBytes topic (large messages which cannot be handled my synchronous clients)
 - Uses a synchronous MQTT client for the audiostream.
 - OTA Updating
-- Dynamic brightness
+- Dynamic brightness and colors for idle, hotword, updating and disconnected
 
 ## Get started
 
@@ -33,9 +33,10 @@ When you do a make, the partitions_two_ota.bin will be in the build folder and t
 
 To flash the OTA version for the first time, attach the Voice to a Raspberry Pi. 
 - Copy the folder "hal" to your Arduino IDE libraries folder
-- Download and add to Arduino IDE: https://github.com/marvinroger/async-mqtt-client
+- Add to Arduino IDE: AsynchMqttClient https://github.com/marvinroger/async-mqtt-client
 - Download and add to Arduino IDE: https://github.com/me-no-dev/AsyncTCP
-- Download and add to Arduino IDE: https://github.com/knolleary/pubsubclient
+- Add to Arduino IDE: PubSubClient by Nick O'Leary https://github.com/knolleary/pubsubclient
+- Add to Arduino IDE: ArduinoJson. Be sure to install version 5 (latest) and not 6. Version 6 this is still beta.
 - Open the MatrixVoiceAudioServer.ino in the Arduino IDE
 - Select ESP32 Dev Module as Board, set flash size to 4MB and Upload speed to 115200
 - Change the MQTT_IP, MQTT_PORT, MQTT_HOST, SITEID, SSID and PASSWORD to fit your needs. SSID and PASSWORD are in config.h
@@ -53,11 +54,24 @@ To flash the OTA version for the first time, attach the Voice to a Raspberry Pi.
 
 If you change code and OTA does not work anymore for some reason, you can always start over by doing the "get started" part except for the first bullit 
 
+## Change led colors without coding
+
+The Matrix Voice Audio Server is subscribed to the topic SITEID/everloop, where SITEID is the name you have given the device.
+When publishing to this topic, the everloop colors and brightness can be altered without coding, setting it to retained will update the settins as soon as the device is connected.
+The message can contain 4 keys:
+ - brightness: integer value between 0 and 100 (%)
+ - idle: array of 4 codes: [red,green,blue,white], ranging 0-255
+ - hotword: array of 4 codes: [red,green,blue,white], ranging 0-255
+ - update: array of 4 codes: [red,green,blue,white], ranging 0-255
+ - disconnect: array of 4 codes: [red,green,blue,white], ranging 0-255
+
+Example: {"brightness":20,"idle":[240,210,17,0],"hotword":[173,17,240,0],"update":[0,255,255,0]}
+
 ## No OTA Version
 
 Will be removed
 
 ## Known issues
 - Uploading a sketch sometimes fails or an error is thrown when the uploading is done. If you get the error, check if your new sketch has been implemented or start over.
-- Not an issue, but a technical point: This code posts 2 messages as audioframes, this is techncally not needed but then you have to change the framerate in Snips to 512. I chose not to want that, because this code will then run with default Snips installation
+- Not an issue, but a technical point: This code posts 2 messages as audioframes, this is techncally not needed but then you have to change the framerate in Snips to 512. I chose not to do that, because this code will then run with default Snips installation
 
