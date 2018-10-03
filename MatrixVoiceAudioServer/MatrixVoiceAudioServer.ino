@@ -1,9 +1,40 @@
+/* ************************************************************************* *
+ * Matrix Voice Audio Streamer
+ * 
+ * This program is written to be a streaming audio server running on the Matrix Voice.
+ This is typically used for Snips.AI, it will then be able to replace
+ * the Snips Audio Server, by publishing small wave messages to the hermes proticol
+ * See https://snips.ai/ for more information
+ * 
+ * Author:  Paul Romkes
+ * Date:    September 2018
+ * Version: 3
+ * 
+ * Changelog:
+ * ==========
+ * v1:
+ *  - first code release. It needs a lot of improvement, no hardcoding stuff
+ * v2:
+ *  - Change to Arduino IDE
+ * v2.1:
+ *  - Changed to pubsubclient and fixed other stability issues
+ * v3:
+ *  - Add OTA
+ * v3.1:
+ *  - Only listen to SITEID to toggle hotword
+ *  - Got rid of String, leads to Heap Fragmentation
+ *  - Add dynamic brihtness, post {"brightness": 50 } to SITEID/everloop
+ *  - Fix stability for good, using semaphores
+ * ************************************************************************ */
 #include <WiFi.h>
 #include <ESPmDNS.h>
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
 #include <AsyncMqttClient.h>
 #include <PubSubClient.h>
+#include <ArduinoJson.h>
+#include <sstream>
+#include <string>
 #include "wishbone_bus.h"
 #include "everloop.h"
 #include "everloop_image.h"
@@ -28,35 +59,19 @@ extern "C" {
 #define CHANNELS 1
 
 namespace hal = matrix_hal;
-hal::WishboneBus wb;
-hal::Everloop everloop;
-hal::MicrophoneArray mics;
+static hal::WishboneBus wb;
+static hal::Everloop everloop;
+static hal::MicrophoneArray mics;
+static hal::EverloopImage image1d;
 WiFiClient net;
 AsyncMqttClient asyncClient; //ASYNCH client to be able to handle huge messages like WAV files
 PubSubClient audioServer(net); //We also need a sync client, asynch leads to errors on the audio thread
 //Timers
 TimerHandle_t mqttReconnectTimer;
 TimerHandle_t wifiReconnectTimer;
-TaskHandle_t AudioHandle;
-TaskHandle_t HotwordOnHandle;
-TaskHandle_t HotwordOffHandle;
+SemaphoreHandle_t wbSemaphore;
 
 //Globals
-const int HOTWORD_ON = BIT0;
-const int HOTWORD_OFF = BIT1;
-static EventGroupHandle_t hwEventGroup;
-uint16_t voicebuffer[CHUNK];
-uint8_t voicemapped[CHUNK*WIDTH];
-
-//Dynamic topics for MQTT
-std::string audioFrameTopic = std::string("hermes/audioServer/") + SITEID + std::string("/audioFrame");
-std::string playFinishedTopic = std::string("hermes/audioServer/") + SITEID + std::string("/playFinished");
-std::string playBytesTopic = std::string("hermes/audioServer/") + SITEID + std::string("/playBytes/#");
-
-bool DEBUG = false; //If set to true, code will post several messages to topics in case of events
-bool boot = true;
-bool disconnected = false;
-
 struct wavfile_header {
   char  riff_tag[4];    //4
   int   riff_length;    //4
@@ -73,33 +88,77 @@ struct wavfile_header {
   int   data_length;    //4
 };
 
-struct wavfile_header header;
+static struct wavfile_header header;
+const int EVERLOOP = BIT0; //Used to check if the everloop should be updated
+static EventGroupHandle_t everloopGroup;
+//Sound buffers
+static uint16_t voicebuffer[CHUNK];
+static uint8_t voicemapped[CHUNK*WIDTH];
+static uint8_t payload[sizeof(header)+(CHUNK*WIDTH)];
+static uint8_t payload2[sizeof(header)+(CHUNK*WIDTH)];
+
+//Colors. TODO: implement code like bightnesss for color changing without coding
+int hw_colors_on[4] = {0,255,0,0};
+int idle_colors[4] = {0,0,255,0};
+int disconnect_colors[4] = {255,0,0,0};
+int update_colors[4] = {0,0,0,255};
+int brightness = 50;
+bool DEBUG = false; //If set to true, code will post several messages to topics in case of events
+bool boot = true;
+bool disconnected = false;
+bool hotword_detected = false;
+
+//Dynamic topics for MQTT
+std::string audioFrameTopic = std::string("hermes/audioServer/") + SITEID + std::string("/audioFrame");
+std::string playFinishedTopic = std::string("hermes/audioServer/") + SITEID + std::string("/playFinished");
+std::string playBytesTopic = std::string("hermes/audioServer/") + SITEID + std::string("/playBytes/#");
+std::string toggleOffTopic = "hermes/hotword/toggleOff";
+std::string toggleOnTopic = "hermes/hotword/toggleOn";
+std::string hotwordTopic = SITEID + std::string("/colors/hotword");
+std::string idleTopic = SITEID + std::string("/colors/idle");
+std::string brightnessTopic = SITEID + std::string("/everloop");
+std::string debugTopic = "debug/asynch/status";
+
+
+const uint8_t PROGMEM gamma8[] = {
+    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  1,  1,  1,
+    1,  1,  1,  1,  1,  1,  1,  1,  1,  2,  2,  2,  2,  2,  2,  2,
+    2,  3,  3,  3,  3,  3,  3,  3,  4,  4,  4,  4,  4,  5,  5,  5,
+    5,  6,  6,  6,  6,  7,  7,  7,  7,  8,  8,  8,  9,  9,  9, 10,
+   10, 10, 11, 11, 11, 12, 12, 13, 13, 13, 14, 14, 15, 15, 16, 16,
+   17, 17, 18, 18, 19, 19, 20, 20, 21, 21, 22, 22, 23, 24, 24, 25,
+   25, 26, 27, 27, 28, 29, 29, 30, 31, 32, 32, 33, 34, 35, 35, 36,
+   37, 38, 39, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 50,
+   51, 52, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 66, 67, 68,
+   69, 70, 72, 73, 74, 75, 77, 78, 79, 81, 82, 83, 85, 86, 87, 89,
+   90, 92, 93, 95, 96, 98, 99,101,102,104,105,107,109,110,112,114,
+  115,117,119,120,122,124,126,127,129,131,133,135,137,138,140,142,
+  144,146,148,150,152,154,156,158,160,162,164,167,169,171,173,175,
+  177,180,182,184,186,189,191,193,196,198,200,203,205,208,210,213,
+  215,218,220,223,225,228,231,233,236,239,241,244,247,249,252,255 };
 
 // ---------------------------------------------------------------------------
-// EVERLOOP (The Led Ring)
+// EVERLOOP, Only use this function in SETUP
+// When using it in other parts, it might crash the ESP because of the SPI
+// being also used by the audiostream. A mutex task has been implemented for that
 // ---------------------------------------------------------------------------
 void setEverloop(int red, int green, int blue, int white) {
-    hal::EverloopImage image1d;
+    int r = floor(brightness * red / 100);
+    r = pgm_read_byte(&gamma8[r]);
+    int g = floor(brightness * green / 100);
+    g = pgm_read_byte(&gamma8[g]);
+    int b = floor(brightness * blue / 100);
+    b = pgm_read_byte(&gamma8[b]);
+    int w = floor(brightness * white / 100);
+    w = pgm_read_byte(&gamma8[w]);
     for (hal::LedValue& led : image1d.leds) {
-      led.red = red;
-      led.green = green;
-      led.blue = blue;
-      led.white = white;
+      led.red = r;
+      led.green = g;
+      led.blue = b;
+      led.white = w;
     }
-
     everloop.Write(&image1d);
-}
-
-// ---------------------------------------------------------------------------
-// Set the HOTWORD bits
-// ---------------------------------------------------------------------------
-static void HotWordSetDetected(uint8_t c)
-{
-    if (c) {
-      xEventGroupSetBits(hwEventGroup, HOTWORD_ON);
-    } else {
-      xEventGroupSetBits(hwEventGroup, HOTWORD_OFF);
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -111,14 +170,13 @@ void connectToWifi() {
 }
 
 void connectToMqtt() {
-  Serial.println("Connecting to MQTT...");
+  Serial.println("Connecting to asynch MQTT...");
   asyncClient.connect();
 }
 
 void connectAudio() {
- while (!audioServer.connect("MatrixVoiceAudio")) {
-    delay(1000);
- }
+ Serial.println("Connecting to synch MQTT...");
+ audioServer.connect("MatrixVoiceAudio");
 }
 
 // ---------------------------------------------------------------------------
@@ -128,14 +186,14 @@ void connectAudio() {
 void WiFiEvent(WiFiEvent_t event) {
   switch(event) {
   case SYSTEM_EVENT_STA_GOT_IP:
-      setEverloop(0,0,10,0); //Turn the ledring BLUE
-      connectToMqtt();
-      connectAudio();
-      break;
+    xEventGroupSetBits(everloopGroup, EVERLOOP); //Set the bit so the everloop gets updated
+    connectToMqtt();
+    connectAudio();
+    break;
   case SYSTEM_EVENT_STA_DISCONNECTED:
-      xTimerStop(mqttReconnectTimer, 0); //Do not reconnect to MQTT while reconnecting to network
-      xTimerStart(wifiReconnectTimer, 0); //Start the reconnect timer
-      break;
+    xTimerStop(mqttReconnectTimer, 0); //Do not reconnect to MQTT while reconnecting to network
+    xTimerStart(wifiReconnectTimer, 0); //Start the reconnect timer
+    break;
   default:
     break;
   }
@@ -147,15 +205,20 @@ void WiFiEvent(WiFiEvent_t event) {
 void onMqttConnect(bool sessionPresent) {
   Serial.println("Connected to MQTT.");
   asyncClient.subscribe(playBytesTopic.c_str(), 0);
-  asyncClient.subscribe("hermes/hotword/toggleOff",0);
-  asyncClient.subscribe("hermes/hotword/toggleOn",0);
+  asyncClient.subscribe(toggleOffTopic.c_str(),0);
+  asyncClient.subscribe(toggleOnTopic.c_str(),0);
+  
+  //subscribe to matrixvoice topcis
+  asyncClient.subscribe(hotwordTopic.c_str(),0);
+  asyncClient.subscribe(idleTopic.c_str(),0);
+  asyncClient.subscribe(brightnessTopic.c_str(),0);
   if (DEBUG) {
     if (boot) {
       boot = false;
-      asyncClient.publish("debug/asynch/status",0, false, "boot");
+      asyncClient.publish(debugTopic.c_str(),0, false, "boot");
     }
     if (disconnected) {
-      asyncClient.publish("debug/asynch/status",0, false, "reconnect");
+      asyncClient.publish(debugTopic.c_str(),0, false, "reconnect");
       disconnected = false;
     }
   }
@@ -181,46 +244,67 @@ void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
 // feedback sound is toggled on
 // ---------------------------------------------------------------------------
 void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) {
-  String topicstr(topic);
+  std::string topicstr(topic);
   if (len + index >= total) {
-    if (topicstr.indexOf("toggleOff") > 0) {
-      HotWordSetDetected(1);
-    } else if (topicstr.indexOf("toggleOn") > 0) {
-      HotWordSetDetected(0);
-    } else if (topicstr.indexOf("playBytes") > 0) {
-      int pos = 19 + String(SITEID).length() + 11;
-      String s = "{\"id\":\"" + topicstr.substring(pos) + "\",\"siteId\":\"" + SITEID + "\",\"sessionId\":null}";
+    if (topicstr.find("toggleOff") != std::string::npos) {
+      std::string payloadstr(payload);
+      //Check if this is for us
+      if (payloadstr.find(SITEID) != std::string::npos) {
+        hotword_detected = true;
+        xEventGroupSetBits(everloopGroup, EVERLOOP); //Set the bit so the everloop gets updated
+      }
+    } else if (topicstr.find("toggleOn") != std::string::npos) {
+      //Check if this is for us
+      std::string payloadstr(payload);
+      if (payloadstr.find(SITEID) != std::string::npos) {
+        hotword_detected = false;
+        xEventGroupSetBits(everloopGroup, EVERLOOP); //Set the bit so the everloop gets updated
+      }
+    } else if (topicstr.find("playBytes") != std::string::npos) {
+      int pos = 19 + strlen(SITEID) + 11;
+      std::string s  = "{\"id\":\"" + topicstr.substr(pos,37) + "\",\"siteId\":\"" + SITEID + "\",\"sessionId\":null}";
       if (asyncClient.connected()) {
         asyncClient.publish(playFinishedTopic.c_str(), 0, false, s.c_str());
+      }
+/*  TODO   
+    } else if (topicstr.find(hotwordTopic.c_str()) != std::string::npos) {
+      split_message(payload, hw_colors_on, 4);
+    } else if (topicstr.find(idleTopic.c_str()) != std::string::npos) {
+      split_message(payload, idle_colors, 4);
+      //setEverloop(idle_colors[0],idle_colors[1],idle_colors[2],idle_colors[3]);
+ */   
+    } else if (topicstr.find(brightnessTopic.c_str()) != std::string::npos) {
+      //payload[length] = '\0';
+      StaticJsonDocument<200> jsonBuffer;
+      DeserializationError error = deserializeJson(jsonBuffer, (char *) payload);
+      if (!error) {
+        JsonObject root = jsonBuffer.as<JsonObject>();
+        brightness = root["brightness"];
+        xEventGroupSetBits(everloopGroup, EVERLOOP);
       }
     }
   }
 }
 
-// ---------------------------------------------------------------------------
-// Hotword tasks, implemented as task due to stability issues
-// ---------------------------------------------------------------------------
-void hotwordOn(void *pvParam){
-    while(1){
-        xEventGroupWaitBits(hwEventGroup,HOTWORD_ON,true,true,portMAX_DELAY);
-        setEverloop(0,10,0,0);
-    }
-    vTaskDelete(NULL);
+void split_message(char* str, int colors[], int number ) {
+  int i = 0;
+  std::istringstream ss(str);
+  std::string token;
+  //s << str;
+  while(std::getline(ss, token, ';')) {
+    colors[i] = atof(token.c_str());
+    i++;
+  }
 }
 
-void hotwordOff(void *pvParam){
-    while(1){
-        xEventGroupWaitBits(hwEventGroup,HOTWORD_OFF,true,true,portMAX_DELAY);
-        setEverloop(0,0,10,0);
-    }
-    vTaskDelete(NULL);
-}
 // ---------------------------------------------------------------------------
 // Audiostream -  uses SYNC MQTT client
 // ---------------------------------------------------------------------------
 void Audiostream( void * parameter ) {
-  for(;;){
-    if (audioServer.connected()) {
+   for(;;){
+      // See if we can obtain or "Take" the Serial Semaphore.
+      // If the semaphore is not available, wait 5 ticks of the Scheduler to see if it becomes free.
+    if (audioServer.connected() && (xSemaphoreTake( wbSemaphore, ( TickType_t ) 5 ) == pdTRUE) ) {
       //We are connected! 
       mics.Read();
       
@@ -233,8 +317,6 @@ void Audiostream( void * parameter ) {
       //We do a memcpy, because I need to add the wave header as well
       memcpy(voicemapped,voicebuffer,CHUNK*WIDTH);
   
-      uint8_t payload[sizeof(header)+(CHUNK*WIDTH)];
-      uint8_t payload2[sizeof(header)+(CHUNK*WIDTH)];
       //Add the wave header
       memcpy(payload,&header,sizeof(header));
       memcpy(&payload[sizeof(header)], voicemapped, sizeof(voicemapped));
@@ -253,13 +335,81 @@ void Audiostream( void * parameter ) {
       memcpy(&payload2[sizeof(header)], voicemapped, sizeof(voicemapped));
       
       audioServer.publish(audioFrameTopic.c_str(), (uint8_t *)payload2, sizeof(payload2));
+      xSemaphoreGive( wbSemaphore ); // Now free or "Give" the Serial Port for others.
     }
+    vTaskDelay(1);
   }
   vTaskDelete(NULL);
 }
 
-void setup() {
-  hwEventGroup = xEventGroupCreate();
+void everloopTask(void *pvParam){
+    while(1){
+      xEventGroupWaitBits(everloopGroup,EVERLOOP,true,true,portMAX_DELAY); //Wait for the bit before updating
+      //Implementation of Semaphore, otherwise the ESP will crash due to read of the mics
+      if ( xSemaphoreTake( wbSemaphore, ( TickType_t ) 100 ) == pdTRUE )
+      {
+        //Yeah got it, see what colors whe need
+        int r = 0;
+        int g = 0;
+        int b = 0;
+        int w = 0;
+        if (hotword_detected) {
+          r = hw_colors_on[0];
+          g = hw_colors_on[1];
+          b = hw_colors_on[2];
+          w = hw_colors_on[3];
+        } else {
+          r = idle_colors[0];
+          g = idle_colors[1];
+          b = idle_colors[2];
+          w = idle_colors[3];
+        }
+        r = floor(brightness * r / 100);
+        r = pgm_read_byte(&gamma8[r]);
+        g = floor(brightness * g / 100);
+        g = pgm_read_byte(&gamma8[g]);
+        b = floor(brightness * b / 100);
+        b = pgm_read_byte(&gamma8[b]);
+        w = floor(brightness * w / 100);
+        w = pgm_read_byte(&gamma8[w]);
+        for (hal::LedValue& led : image1d.leds) {
+          led.red = r;
+          led.green = g;
+          led.blue = b;
+          led.white = w;
+        }
+        everloop.Write(&image1d);
+        xSemaphoreGive( wbSemaphore ); //Free for all
+        xEventGroupClearBits(everloopGroup,EVERLOOP); //Clear the everloop bit
+      }
+      vTaskDelay(1); //Delay a tick, for better stability 
+    }
+    vTaskDelete(NULL);
+}
+
+void setup() {  
+  //Implementation of Semaphore, otherwise the ESP will crash due to read of the mics
+  if ( wbSemaphore == NULL )  //Not yet been created?
+  {
+    wbSemaphore = xSemaphoreCreateMutex();  //Create a mutex semaphore
+    if ( ( wbSemaphore ) != NULL )
+      xSemaphoreGive( ( wbSemaphore ) ); //Free for all 
+  }
+    
+  //Reconnect timers
+  mqttReconnectTimer = xTimerCreate("mqttTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(connectToMqtt));
+  wifiReconnectTimer = xTimerCreate("wifiTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(connectToWifi));
+ 
+  WiFi.onEvent(WiFiEvent);
+
+  asyncClient.onConnect(onMqttConnect);
+  asyncClient.onDisconnect(onMqttDisconnect);
+  asyncClient.onMessage(onMqttMessage);
+  asyncClient.setServer(MQTT_IP, MQTT_PORT);
+  audioServer.setServer(MQTT_IP, 1883);  
+
+  everloopGroup = xEventGroupCreate();
+ 
   strncpy(header.riff_tag,"RIFF",4);
   strncpy(header.wave_tag,"WAVE",4);
   strncpy(header.fmt_tag,"fmt ",4);
@@ -281,26 +431,15 @@ void setup() {
   //setup mics
   mics.Setup(&wb);
   mics.SetSamplingRate(RATE);
-  //mics.SetGain(5);
+  mics.SetGain(5);
 
    // Microphone Core Init
   hal::MicrophoneCore mic_core(mics);
   mic_core.Setup(&wb);
 
-  setEverloop(10,0,0,0); //RED
-
-  //Reconnect timers
-  mqttReconnectTimer = xTimerCreate("mqttTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(connectToMqtt));
-  wifiReconnectTimer = xTimerCreate("wifiTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(connectToWifi));
- 
-  WiFi.onEvent(WiFiEvent);
-
-  asyncClient.onConnect(onMqttConnect);
-  asyncClient.onDisconnect(onMqttDisconnect);
-  asyncClient.onMessage(onMqttMessage);
-  asyncClient.setServer(MQTT_IP, MQTT_PORT);
-  audioServer.setServer(MQTT_IP, 1883);  
-
+  //Use function in setup
+  setEverloop(disconnect_colors[0],disconnect_colors[1],disconnect_colors[2],disconnect_colors[3]);
+  
   Serial.begin(115200);
   Serial.println("Booting");
   WiFi.mode(WIFI_STA);
@@ -311,11 +450,13 @@ void setup() {
     ESP.restart();
   }
 
-  //Create the runnings tasks
-  xTaskCreate(Audiostream,"Audiostream",10000,NULL,5,&AudioHandle);
-  xTaskCreate(hotwordOn,"hotwordOn",4096,NULL,5,&HotwordOnHandle);
-  xTaskCreate(hotwordOff,"hotwordOff",4096,NULL,5,&HotwordOffHandle);  
+  //Use function in setup
+  setEverloop(idle_colors[0],idle_colors[1],idle_colors[2],idle_colors[3]);
 
+  //Create the runnings tasks, AudioStream is on 1 core, the rest on the other core
+  xTaskCreatePinnedToCore(Audiostream,"Audiostream",10000,NULL,1,NULL,0);
+  xTaskCreatePinnedToCore(everloopTask,"everloopTask",4096,NULL,3,NULL,1);
+    
   // ---------------------------------------------------------------------------
   // ArduinoOTA stuff
   // ---------------------------------------------------------------------------
@@ -326,19 +467,8 @@ void setup() {
 
   ArduinoOTA
     .onStart([]() {
-      //remove audiotask
-      vTaskDelete(AudioHandle);
-      vTaskDelete(HotwordOnHandle);
-      vTaskDelete(HotwordOffHandle);
-      setEverloop(0,0,0,10); //WHITE
-      String type;
-      if (ArduinoOTA.getCommand() == U_FLASH)
-        type = "sketch";
-      else // U_SPIFFS
-        type = "filesystem";
-
-      // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
-      Serial.println("Start updating " + type);
+      //everloop_colors = update_colors;
+      xEventGroupSetBits(everloopGroup, EVERLOOP);
     })
     .onEnd([]() {
       Serial.println("\nEnd");
@@ -356,18 +486,14 @@ void setup() {
     });
 
   ArduinoOTA.begin();
-
-  Serial.println("Ready");
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());  
 }
 
 void loop() {
   ArduinoOTA.handle();
   if (!audioServer.connected()) {
-    if (asyncClient.connected()) {
+    if (asyncClient.connected() && DEBUG) {
       asyncClient.publish("debug/audioserver/status",0, false, "reconnect");
     }
     connectAudio();
-  }  
+  }
 }
