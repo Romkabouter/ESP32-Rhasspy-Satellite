@@ -10,13 +10,14 @@ Please raise an issue if some of the steps do not work or if they are unclear.
 - Ledring turns GREEN when the hotword is detected, back to BLUE when going to idle
 - Uses an asynchronous MQTT client for the playBytes topic (large messages which cannot be handled my synchronous clients)
 - Uses a synchronous MQTT client for the audiostream.
-- OTA Updating 
+- OTA Updating
+- Dynamic brightness
 
 ## Get started
 
 To get the code running I suggest you first reset the Voice if you have flashed it previously
 
-- Follow Step 1 and 2 (or all steps) from this guide https://www.hackster.io/matrix-labs/get-started-w-esp32-on-the-matrix-voice-d01e0d.
+- Follow Step 1 and 2 (or all steps) from this guide https://matrix-io.github.io/matrix-documentation/matrix-voice/esp32/
 - ssh into the pi, execute this command: voice_esp32_enable. If you get a permission denied, execute the command again. 
 - esptool.py --chip esp32 --port /dev/ttyS0 --baud 115200 --before default_reset --after hard_reset erase_flash
 - Reboot the Pi.
@@ -50,22 +51,13 @@ To flash the OTA version for the first time, attach the Voice to a Raspberry Pi.
 - Make a change (or not) and do a Sketch -> Upload. The leds will turn WHITE
 - Sometimes uploading fails, just retry untill it succeeds
 
+If you change code and OTA does not work anymore for some reason, you can always start over by doing the "get started" part except for the first bullit 
+
 ## No OTA Version
 
-This version is basically the same, but will not be updated with new features
-
-In the folder "MatrixVoiceAudioServerArduino", there are three bin files:
-- bootloader.bin
-- partitions_singleapp.bin
-- MatrixVoiceAudioServerArduino.ino.esp32.bin
-
-The first two I copied directly from the build/bootloader and build folders from the ESP32 demo.
-If you want to build and use your own, get the ESP32 demo running:
-https://www.hackster.io/matrix-labs/get-started-w-esp32-on-the-matrix-voice-d01e0d
-In the folder mic_energy/build you will find the files I uses.
-
-The third is a compiled version, see OTA version on how to flash.
+Will be removed
 
 ## Known issues
-- Sometimes not all leds light up, but only 2/3 or so. Does not seem to have any effect on functionality
-- Uploading a sketch sometimes fails (just retry until succesfull)
+- Uploading a sketch sometimes fails or an error is thrown when the uploading is done. If you get the error, check if your new sketch has been implemented or start over.
+- Not an issue, but a technical point: This code posts 2 messages as audioframes, this is techncally not needed but then you have to change the framerate in Snips to 512. I chose not to want that, because this code will then run with default Snips installation
+
