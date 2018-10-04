@@ -28,6 +28,7 @@
  *  - Fix stability, using semaphores
  * v3.2:
  *  - Add dynamic colors, see readme for documentation
+ *  - Restart the device by publishing hashed password to SITEID/restart
  * ************************************************************************ */
 #include <WiFi.h>
 #include <ESPmDNS.h>
@@ -111,6 +112,8 @@ bool boot = true;
 bool disconnected = false;
 bool hotword_detected = false;
 bool update = false;
+//Change to your own password hash at https://www.md5hashgenerator.com/
+const char* passwordhash = "4b8d34978fafde81a85a1b91a09a881b";
 
 //Dynamic topics for MQTT
 std::string audioFrameTopic = std::string("hermes/audioServer/") + SITEID + std::string("/audioFrame");
@@ -121,6 +124,7 @@ std::string toggleOnTopic = "hermes/hotword/toggleOn";
 std::string everloopTopic = SITEID + std::string("/everloop");
 std::string debugTopic = "debug/asynch/status";
 std::string debugAudioTopic = "debug/audioserver/status";
+std::string restartTopic = SITEID + std::string("/restart");
 
 //This is used to be able to change brightness, while keeping the colors appear the same
 //Called gamma correction, check this https://learn.adafruit.com/led-tricks-gamma-correction/the-issue
@@ -207,9 +211,9 @@ void onMqttConnect(bool sessionPresent) {
   asyncClient.subscribe(playBytesTopic.c_str(), 0);
   asyncClient.subscribe(toggleOffTopic.c_str(),0);
   asyncClient.subscribe(toggleOnTopic.c_str(),0);
-  
-  //subscribe to matrixvoice topics
   asyncClient.subscribe(everloopTopic.c_str(),0);
+  asyncClient.subscribe(restartTopic.c_str(),0);
+
   if (DEBUG) {
     if (boot) {
       boot = false;
@@ -262,13 +266,6 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
       if (asyncClient.connected()) {
         asyncClient.publish(playFinishedTopic.c_str(), 0, false, s.c_str());
       }
-/*  TODO   
-    } else if (topicstr.find(hotwordTopic.c_str()) != std::string::npos) {
-      split_message(payload, hw_colors_on, 4);
-    } else if (topicstr.find(idleTopic.c_str()) != std::string::npos) {
-      split_message(payload, idle_colors, 4);
-      //setEverloop(idle_colors[0],idle_colors[1],idle_colors[2],idle_colors[3]);
- */   
     } else if (topicstr.find(everloopTopic.c_str()) != std::string::npos) {
       StaticJsonBuffer<300> jsonBuffer;
       JsonObject& root = jsonBuffer.parseObject((char *) payload);
@@ -302,18 +299,17 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
         }
         xEventGroupSetBits(everloopGroup, EVERLOOP);
       }
+    } else if (topicstr.find(restartTopic.c_str()) != std::string::npos) {
+      StaticJsonBuffer<300> jsonBuffer;
+      JsonObject& root = jsonBuffer.parseObject((char *) payload);
+      if (root.success()) {
+        if (root.containsKey("passwordhash")) {
+          if (root["passwordhash"] == passwordhash) {
+            ESP.restart();          
+          }
+        }
+      }
     }
-  }
-}
-
-void split_message(char* str, int colors[], int number ) {
-  int i = 0;
-  std::istringstream ss(str);
-  std::string token;
-  //s << str;
-  while(std::getline(ss, token, ';')) {
-    colors[i] = atof(token.c_str());
-    i++;
   }
 }
 
@@ -458,7 +454,7 @@ void setup() {
   //setup mics
   mics.Setup(&wb);
   mics.SetSamplingRate(RATE);
-  mics.SetGain(5);
+  //mics.SetGain(5);
 
    // Microphone Core Init
   hal::MicrophoneCore mic_core(mics);
@@ -487,11 +483,8 @@ void setup() {
   // ---------------------------------------------------------------------------
   // ArduinoOTA stuff
   // ---------------------------------------------------------------------------
-  ArduinoOTA.setHostname("MatrixVoice");
-  
-  //Change to your own password hash at https://www.md5hashgenerator.com/
-  ArduinoOTA.setPasswordHash("4b8d34978fafde81a85a1b91a09a881b");
-
+  ArduinoOTA.setHostname("MatrixVoice");  
+  ArduinoOTA.setPasswordHash(passwordhash);
   ArduinoOTA
     .onStart([]() {
       update = true;
@@ -518,6 +511,7 @@ void setup() {
 
 void loop() {
   ArduinoOTA.handle();
+  
   if (!audioServer.connected()) {
     if (asyncClient.connected() && DEBUG) {
       asyncClient.publish(debugAudioTopic.c_str(),0, false, "reconnect");

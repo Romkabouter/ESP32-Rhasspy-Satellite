@@ -12,6 +12,7 @@ Please raise an issue if some of the steps do not work or if they are unclear.
 - Uses a synchronous MQTT client for the audiostream.
 - OTA Updating
 - Dynamic brightness and colors for idle, hotword, updating and disconnected
+- Reboot device by sending hashed password
 
 ## Get started
 
