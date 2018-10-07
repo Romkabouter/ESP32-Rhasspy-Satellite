@@ -29,6 +29,8 @@
  * v3.2:
  *  - Add dynamic colors, see readme for documentation
  *  - Restart the device by publishing hashed password to SITEID/restart
+ *  - Adjustable framerate, more info at https://snips.gitbook.io/documentation/advanced-configuration/platform-configuration 
+ *  - Rotating animation possible, not fnished yet
  * ************************************************************************ */
 #include <WiFi.h>
 #include <ESPmDNS.h>
@@ -58,7 +60,6 @@ extern "C" {
 #define MQTT_IP IPAddress(192, 168, 178, 194)
 #define MQTT_HOST "192.168.178.194"
 #define MQTT_PORT 1883
-#define CHUNK 256 //set to multiplications of 256, voice return a set of 256
 #define WIDTH 2
 #define CHANNELS 1
 
@@ -94,26 +95,25 @@ struct wavfile_header {
 
 static struct wavfile_header header;
 const int EVERLOOP = BIT0; //Used to check if the everloop should be updated
+const int ANIMATE = BIT1;
 static EventGroupHandle_t everloopGroup;
-//Sound buffers
-static uint16_t voicebuffer[CHUNK];
-static uint8_t voicemapped[CHUNK*WIDTH];
-static uint8_t payload[sizeof(header)+(CHUNK*WIDTH)];
-static uint8_t payload2[sizeof(header)+(CHUNK*WIDTH)];
 
 //Colors. TODO: implement code like bightnesss for color changing without coding
 int hotword_colors[4] = {0,255,0,0};
 int idle_colors[4] = {0,0,255,0};
-int disconnect_colors[4] = {255,0,0,0};
+int wifi_disc_colors[4] = {255,0,0,0};
 int update_colors[4] = {0,0,0,255};
 int brightness = 50;
 bool DEBUG = false; //If set to true, code will post several messages to topics in case of events
 bool boot = true;
-bool disconnected = false;
+bool wifi_connected = false;
 bool hotword_detected = false;
 bool update = false;
 //Change to your own password hash at https://www.md5hashgenerator.com/
 const char* passwordhash = "4b8d34978fafde81a85a1b91a09a881b";
+int message_count;
+int CHUNK = 256; //set to multiplications of 256, voice return a set of 256
+int chunkValues[] = {32,64,128,256,512,1024};
 
 //Dynamic topics for MQTT
 std::string audioFrameTopic = std::string("hermes/audioServer/") + SITEID + std::string("/audioFrame");
@@ -122,8 +122,8 @@ std::string playBytesTopic = std::string("hermes/audioServer/") + SITEID + std::
 std::string toggleOffTopic = "hermes/hotword/toggleOff";
 std::string toggleOnTopic = "hermes/hotword/toggleOn";
 std::string everloopTopic = SITEID + std::string("/everloop");
-std::string debugTopic = "debug/asynch/status";
-std::string debugAudioTopic = "debug/audioserver/status";
+std::string debugTopic = SITEID + std::string("/debug");
+std::string audioTopic = SITEID + std::string("/audio");
 std::string restartTopic = SITEID + std::string("/restart");
 
 //This is used to be able to change brightness, while keeping the colors appear the same
@@ -145,25 +145,6 @@ const uint8_t PROGMEM gamma8[] = {
   144,146,148,150,152,154,156,158,160,162,164,167,169,171,173,175,
   177,180,182,184,186,189,191,193,196,198,200,203,205,208,210,213,
   215,218,220,223,225,228,231,233,236,239,241,244,247,249,252,255 };
-
-// ---------------------------------------------------------------------------
-// EVERLOOP, Only use this function in SETUP
-// When using it in other parts, it might crash the ESP because of the SPI
-// being also used by the audiostream. A mutex task has been implemented for that
-// ---------------------------------------------------------------------------
-void setEverloop(int red, int green, int blue, int white) {
-    int r = pgm_read_byte(&gamma8[(int)round(brightness * red / 100)]);
-    int g = pgm_read_byte(&gamma8[(int)floor(brightness * green / 100)]);
-    int b = pgm_read_byte(&gamma8[(int)floor(brightness * blue / 100)]);
-    int w = pgm_read_byte(&gamma8[(int)floor(brightness * white / 100)]);
-    for (hal::LedValue& led : image1d.leds) {
-      led.red = r;
-      led.green = g;
-      led.blue = b;
-      led.white = w;
-    }
-    everloop.Write(&image1d);
-}
 
 // ---------------------------------------------------------------------------
 // Network functions
@@ -190,11 +171,14 @@ void connectAudio() {
 void WiFiEvent(WiFiEvent_t event) {
   switch(event) {
   case SYSTEM_EVENT_STA_GOT_IP:
+    wifi_connected = true;
     xEventGroupSetBits(everloopGroup, EVERLOOP); //Set the bit so the everloop gets updated
     connectToMqtt();
     connectAudio();
     break;
   case SYSTEM_EVENT_STA_DISCONNECTED:
+    wifi_connected = false;
+    xEventGroupSetBits(everloopGroup, EVERLOOP);
     xTimerStop(mqttReconnectTimer, 0); //Do not reconnect to MQTT while reconnecting to network
     xTimerStart(wifiReconnectTimer, 0); //Start the reconnect timer
     break;
@@ -213,17 +197,8 @@ void onMqttConnect(bool sessionPresent) {
   asyncClient.subscribe(toggleOnTopic.c_str(),0);
   asyncClient.subscribe(everloopTopic.c_str(),0);
   asyncClient.subscribe(restartTopic.c_str(),0);
-
-  if (DEBUG) {
-    if (boot) {
-      boot = false;
-      asyncClient.publish(debugTopic.c_str(),0, false, "boot");
-    }
-    if (disconnected) {
-      asyncClient.publish(debugTopic.c_str(),0, false, "reconnect");
-      disconnected = false;
-    }
-  }
+  asyncClient.subscribe(audioTopic.c_str(),0);
+  xEventGroupClearBits(everloopGroup,ANIMATE); 
 }
 
 // ---------------------------------------------------------------------------
@@ -231,7 +206,7 @@ void onMqttConnect(bool sessionPresent) {
 // ---------------------------------------------------------------------------
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
   Serial.println("Disconnected from MQTT.");
-  disconnected = true;
+  xEventGroupSetBits(everloopGroup, ANIMATE);
   if (WiFi.isConnected()) {
     xTimerStart(mqttReconnectTimer, 0);
   }
@@ -285,11 +260,11 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
           idle_colors[2] = root["idle"][2];          
           idle_colors[3] = root["idle"][3];          
         }
-        if (root.containsKey("disconnect")) {
-          disconnect_colors[0] = root["disconnect"][0];          
-          disconnect_colors[1] = root["disconnect"][1];          
-          disconnect_colors[2] = root["disconnect"][2];          
-          disconnect_colors[3] = root["disconnect"][3];          
+        if (root.containsKey("wifi_disconnect")) {
+          wifi_disc_colors[0] = root["wifi_disconnect"][0];          
+          wifi_disc_colors[1] = root["wifi_disconnect"][1];          
+          wifi_disc_colors[2] = root["wifi_disconnect"][2];          
+          wifi_disc_colors[3] = root["wifi_disconnect"][3];          
         }
         if (root.containsKey("update")) {
           update_colors[0] = root["update"][0];          
@@ -298,6 +273,27 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
           update_colors[3] = root["update"][3];          
         }
         xEventGroupSetBits(everloopGroup, EVERLOOP);
+      }
+    } else if (topicstr.find(audioTopic.c_str()) != std::string::npos) {
+      StaticJsonBuffer<300> jsonBuffer;
+      JsonObject& root = jsonBuffer.parseObject((char *) payload);
+      if (root.success()) {
+        if (root.containsKey("framerate")) {
+          bool found = false;
+          for (int i=0; i<6; i++){
+            if (chunkValues[i] == root["framerate"]){
+              CHUNK = root["framerate"];
+              message_count = (int)round(mics.NumberOfSamples() / CHUNK);
+              header.riff_length = (uint32_t)sizeof(header) + (CHUNK * WIDTH);
+              header.data_length = CHUNK * WIDTH;
+              found = true;
+              break;
+            }
+          }
+          if (!found) {
+             asyncClient.publish(debugTopic.c_str(),0, false, "Framerate should be 32,64,128,256,512 or 1024");
+          }
+        }
       }
     } else if (topicstr.find(restartTopic.c_str()) != std::string::npos) {
       StaticJsonBuffer<300> jsonBuffer;
@@ -316,41 +312,36 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
 // ---------------------------------------------------------------------------
 // Audiostream -  uses SYNC MQTT client
 // ---------------------------------------------------------------------------
-void Audiostream( void * parameter ) {
+void Audiostream( void * p ) {
    for(;;){
-      // See if we can obtain or "Take" the Serial Semaphore.
-      // If the semaphore is not available, wait 5 ticks of the Scheduler to see if it becomes free.
-    if (audioServer.connected() && (xSemaphoreTake( wbSemaphore, ( TickType_t ) 5 ) == pdTRUE) ) {
+     // See if we can obtain or "Take" the Serial Semaphore.
+     // If the semaphore is not available, wait 5 ticks of the Scheduler to see if it becomes free.
+    if (audioServer.connected() && (xSemaphoreTake( wbSemaphore, ( TickType_t ) 5000 ) == pdTRUE) ) {
       //We are connected! 
       mics.Read();
       
-      //NumberOfSamples() = kMicarrayBufferSize / kMicrophoneChannels = 4069 / 8 = 512
-      for (uint32_t s = 0; s < CHUNK; s++) {
-          voicebuffer[s] = mics.Beam(s);
-      }
-
-      //voicebuffer will hold 256 samples of 2 bytes, but we need it as 1 byte
-      //We do a memcpy, because I need to add the wave header as well
-      memcpy(voicemapped,voicebuffer,CHUNK*WIDTH);
-  
-      //Add the wave header
-      memcpy(payload,&header,sizeof(header));
-      memcpy(&payload[sizeof(header)], voicemapped, sizeof(voicemapped));
-
-      audioServer.publish(audioFrameTopic.c_str(), (uint8_t *)payload, sizeof(payload));
+      //Sound buffers
+      uint16_t voicebuffer[CHUNK];
+      uint8_t voicemapped[CHUNK*WIDTH];
+      uint8_t payload[sizeof(header)+(CHUNK*WIDTH)];
       
-      //also send to second half as a wav
-      for (uint32_t s = CHUNK; s < CHUNK*WIDTH; s++) {
-          voicebuffer[s-CHUNK] = mics.Beam(s);
+      //Message count is the Mattix NumberOfSamples divided by the framerate of Snips.
+      //This defaults to 512 / 256 = 2. If you lower the framerate, the AudioServer has to send more wavefile
+      //because the NumOfSamples is a fixed number
+      for (int i=0;i<message_count;i++) {
+        for (uint32_t s = CHUNK*i; s < CHUNK * (i+1); s++) {
+            voicebuffer[s-(CHUNK*i)] = mics.Beam(s);
+        }      
+        //voicebuffer will hold 256 samples of 2 bytes, but we need it as 1 byte
+        //We do a memcpy, because I need to add the wave header as well
+        memcpy(voicemapped,voicebuffer,CHUNK*WIDTH);
+        
+       //Add the wave header
+        memcpy(payload,&header,sizeof(header));
+        memcpy(&payload[sizeof(header)], voicemapped, sizeof(voicemapped));
+        audioServer.publish(audioFrameTopic.c_str(), (uint8_t *)payload, sizeof(payload));
+        
       }
-  
-      memcpy(voicemapped,voicebuffer,CHUNK*WIDTH);
-  
-      //Add the wave header
-      memcpy(payload2,&header,sizeof(header));
-      memcpy(&payload2[sizeof(header)], voicemapped, sizeof(voicemapped));
-      
-      audioServer.publish(audioFrameTopic.c_str(), (uint8_t *)payload2, sizeof(payload2));
       xSemaphoreGive( wbSemaphore ); // Now free or "Give" the Serial Port for others.
     }
     vTaskDelay(1);
@@ -358,12 +349,44 @@ void Audiostream( void * parameter ) {
   vTaskDelete(NULL);
 }
 
-void everloopTask(void *pvParam){
+
+void everloopAnimation(void * p) {
+    int position = 0;
+    int red;
+    int green;
+    int blue;
+    int white;
+    while(1){          
+      xEventGroupWaitBits(everloopGroup,ANIMATE,true,true,portMAX_DELAY); //Wait for the bit before updating
+      if ( xSemaphoreTake( wbSemaphore, ( TickType_t ) 5000 ) == pdTRUE )
+      {
+         for (int i = 0; i < image1d.leds.size(); i++) {
+          red = ((i+1) * brightness / image1d.leds.size()) * idle_colors[0] / 100;
+          green = ((i+1) * brightness / image1d.leds.size()) * idle_colors[1] / 100;
+          blue = ((i+1) * brightness / image1d.leds.size()) * idle_colors[2] / 100;
+          white = ((i+1) * brightness / image1d.leds.size()) * idle_colors[3] / 100;
+          image1d.leds[(i + position) % image1d.leds.size()].red = pgm_read_byte(&gamma8[red]);
+          image1d.leds[(i + position) % image1d.leds.size()].green = pgm_read_byte(&gamma8[green]);
+          image1d.leds[(i + position) % image1d.leds.size()].blue = pgm_read_byte(&gamma8[blue]);
+          image1d.leds[(i + position) % image1d.leds.size()].white = pgm_read_byte(&gamma8[white]);
+        }       
+        position++;
+        position %= image1d.leds.size();
+        everloop.Write(&image1d);
+        delay(50);
+        xSemaphoreGive( wbSemaphore ); //Free for all
+      }
+    }
+    vTaskDelete(NULL);  
+}
+
+void everloopTask(void * p){
     while(1){
       xEventGroupWaitBits(everloopGroup,EVERLOOP,true,true,portMAX_DELAY); //Wait for the bit before updating
       Serial.println("Updating everloop");
       //Implementation of Semaphore, otherwise the ESP will crash due to read of the mics
-      if ( xSemaphoreTake( wbSemaphore, ( TickType_t ) 100 ) == pdTRUE )
+      //Wait a really long time to make sure we get access (5000 ticks)
+      if ( xSemaphoreTake( wbSemaphore, ( TickType_t ) 5000 ) == pdTRUE )
       {
         //Yeah got it, see what colors whe need
         int r = 0;
@@ -380,6 +403,11 @@ void everloopTask(void *pvParam){
           g = hotword_colors[1];
           b = hotword_colors[2];
           w = hotword_colors[3];
+        } else if (!wifi_connected) {
+          r = wifi_disc_colors[0];
+          g = wifi_disc_colors[1];
+          b = wifi_disc_colors[2];
+          w = wifi_disc_colors[3];
         } else {
           r = idle_colors[0];
           g = idle_colors[1];
@@ -424,7 +452,7 @@ void setup() {
   wifiReconnectTimer = xTimerCreate("wifiTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(connectToWifi));
  
   WiFi.onEvent(WiFiEvent);
-
+  asyncClient.setClientId("MatrixVoice");
   asyncClient.onConnect(onMqttConnect);
   asyncClient.onDisconnect(onMqttDisconnect);
   asyncClient.onMessage(onMqttMessage);
@@ -460,9 +488,13 @@ void setup() {
   hal::MicrophoneCore mic_core(mics);
   mic_core.Setup(&wb);
 
-  //Use function in setup
-  setEverloop(disconnect_colors[0],disconnect_colors[1],disconnect_colors[2],disconnect_colors[3]);
-  
+  //NumberOfSamples() = kMicarrayBufferSize / kMicrophoneChannels = 4069 / 8 = 512
+  //Depending on the CHUNK, we need to calculate how many message we need to send
+  message_count = (int)round(mics.NumberOfSamples() / CHUNK);
+
+  xTaskCreatePinnedToCore(everloopTask,"everloopTask",4096,NULL,5,NULL,1);
+  xEventGroupSetBits(everloopGroup, EVERLOOP);
+
   Serial.begin(115200);
   Serial.println("Booting");
   WiFi.mode(WIFI_STA);
@@ -473,12 +505,10 @@ void setup() {
     ESP.restart();
   }
 
-  //Use function in setup
-  setEverloop(idle_colors[0],idle_colors[1],idle_colors[2],idle_colors[3]);
-
   //Create the runnings tasks, AudioStream is on 1 core, the rest on the other core
-  xTaskCreatePinnedToCore(Audiostream,"Audiostream",10000,NULL,1,NULL,0);
-  xTaskCreatePinnedToCore(everloopTask,"everloopTask",4096,NULL,3,NULL,1);
+  xTaskCreatePinnedToCore(Audiostream,"Audiostream",10000,NULL,3,NULL,0);
+  xTaskCreatePinnedToCore(everloopAnimation,"everloopAnimation",4096,NULL,5,NULL,1);
+  
     
   // ---------------------------------------------------------------------------
   // ArduinoOTA stuff
@@ -511,11 +541,7 @@ void setup() {
 
 void loop() {
   ArduinoOTA.handle();
-  
   if (!audioServer.connected()) {
-    if (asyncClient.connected() && DEBUG) {
-      asyncClient.publish(debugAudioTopic.c_str(),0, false, "reconnect");
-    }
     connectAudio();
   }
 }
