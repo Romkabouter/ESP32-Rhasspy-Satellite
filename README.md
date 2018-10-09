@@ -68,11 +68,6 @@ The message can contain 4 keys:
 
 Example: {"brightness":20,"idle":[240,210,17,0],"hotword":[173,17,240,0],"update":[0,255,255,0]}
 
-## No OTA Version
-
-Will be removed
-
 ## Known issues
 - Uploading a sketch sometimes fails or an error is thrown when the uploading is done. If you get the error, check if your new sketch has been implemented or start over.
-- Not an issue, but a technical point: This code posts 2 messages as audioframes, this is techncally not needed but then you have to change the framerate in Snips to 512. I chose not to do that, because this code will then run with default Snips installation
 
