@@ -5,7 +5,6 @@
  This is typically used for Snips.AI, it will then be able to replace
  * the Snips Audio Server, by publishing small wave messages to the hermes protocol
  * See https://snips.ai/ for more information
- * The audio server splits the stream in 2 parts, so that it will fit the default configuration of 256
  * 
  * Author:  Paul Romkes
  * Date:    September 2018
@@ -30,7 +29,7 @@
  *  - Add dynamic colors, see readme for documentation
  *  - Restart the device by publishing hashed password to SITEID/restart
  *  - Adjustable framerate, more info at https://snips.gitbook.io/documentation/advanced-configuration/platform-configuration 
- *  - Rotating animation possible, not fnished yet
+ *  - Rotating animation possible, not finished or used yet
  * ************************************************************************ */
 #include <WiFi.h>
 #include <ESPmDNS.h>
@@ -198,7 +197,7 @@ void onMqttConnect(bool sessionPresent) {
   asyncClient.subscribe(everloopTopic.c_str(),0);
   asyncClient.subscribe(restartTopic.c_str(),0);
   asyncClient.subscribe(audioTopic.c_str(),0);
-  xEventGroupClearBits(everloopGroup,ANIMATE); 
+  xEventGroupClearBits(everloopGroup,ANIMATE);
 }
 
 // ---------------------------------------------------------------------------
@@ -236,6 +235,7 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
         xEventGroupSetBits(everloopGroup, EVERLOOP); //Set the bit so the everloop gets updated
       }
     } else if (topicstr.find("playBytes") != std::string::npos) {
+      //Get the ID from the topic
       int pos = 19 + strlen(SITEID) + 11;
       std::string s  = "{\"id\":\"" + topicstr.substr(pos,37) + "\",\"siteId\":\"" + SITEID + "\",\"sessionId\":null}";
       if (asyncClient.connected()) {
@@ -508,7 +508,6 @@ void setup() {
   //Create the runnings tasks, AudioStream is on 1 core, the rest on the other core
   xTaskCreatePinnedToCore(Audiostream,"Audiostream",10000,NULL,3,NULL,0);
   xTaskCreatePinnedToCore(everloopAnimation,"everloopAnimation",4096,NULL,5,NULL,1);
-  
     
   // ---------------------------------------------------------------------------
   // ArduinoOTA stuff
