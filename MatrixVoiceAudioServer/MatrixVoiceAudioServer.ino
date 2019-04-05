@@ -45,7 +45,6 @@
 #include <AsyncMqttClient.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
-#include <sstream>
 #include <string>
 #include "wishbone_bus.h"
 #include "everloop.h"
@@ -123,7 +122,6 @@ int idle_colors[4] = {0,0,255,0};
 int wifi_disc_colors[4] = {255,0,0,0};
 int update_colors[4] = {0,0,0,255};
 int brightness = 15;
-int audioDelay = 3870;
 bool DEBUG = false; //If set to true, code will post several messages to topics in case of events
 bool wifi_connected = false;
 bool hotword_detected = false;
@@ -132,9 +130,9 @@ bool isUpdateInProgess =  false;
 const char* passwordhash = "4b8d34978fafde81a85a1b91a09a881b";
 const char* host = "matrixvoice";
 int message_count;
+int samplerate;
 int CHUNK = 256; //set to multiplications of 256, voice return a set of 256
 int chunkValues[] = {32,64,128,256,512,1024};
-int inRate = 44100;
 static EventGroupHandle_t everloopGroup;
 static EventGroupHandle_t audioGroup;
 //This is used to be able to change brightness, while keeping the colors appear the same
@@ -284,15 +282,7 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
   if (len + index == total) {
     //when len + index is total, we have reached the end of the message.
     //We can then do work on it
-    if (topicstr.find("debug") != std::string::npos) {
-       StaticJsonBuffer<300> jsonBuffer;
-      JsonObject& root = jsonBuffer.parseObject((char *) payload);
-      if (root.success()) {
-        if (root.containsKey("sleep")) {
-          audioDelay = root["sleep"];          
-        }
-      }     
-    } else if (topicstr.find("toggleOff") != std::string::npos) {
+    if (topicstr.find("toggleOff") != std::string::npos) {
       std::string payloadstr(payload);
       //Check if this is for us
       if (payloadstr.find(SITEID) != std::string::npos) {
@@ -407,7 +397,7 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
       if (index == 0) {
         //when the index is 0, we have the start of a message
         XT_Wav_Class Message((const uint8_t *)payload); 
-        inRate = Message.SampleRate;
+        samplerate = Message.SampleRate;
         
         //Clear RingBuffer
         audioData.clear();
@@ -584,6 +574,7 @@ void AudioPlayTask(void * p){
       if ( xSemaphoreTake( wbSemaphore, ( TickType_t ) 10000 ) == pdTRUE )
       {
         Serial.println("Play Audio");
+        float sleep = ((1000000 / samplerate) * (kMaxWriteLength/2)) / 3;
         while(!audioData.isEmpty())
         {
             for (int i = 0; i < kMaxWriteLength; i++) 
@@ -593,7 +584,7 @@ void AudioPlayTask(void * p){
               }
             }
             wb.SpiWrite(hal::kDACBaseAddress,(const uint8_t *)data, sizeof(uint16_t) * kMaxWriteLength/2);
-            std::this_thread::sleep_for(std::chrono::microseconds(audioDelay));
+            std::this_thread::sleep_for(std::chrono::microseconds((int)sleep));
         }
         xEventGroupClearBits(audioGroup, PLAY);
         xSemaphoreGive( wbSemaphore ); //Free for all
@@ -674,7 +665,7 @@ void setup() {
   }
 
   //Create the runnings tasks, AudioStream is on 1 core, the rest on the other core
-  //xTaskCreatePinnedToCore(Audiostream,"Audiostream",10000,NULL,3,NULL,0);
+  xTaskCreatePinnedToCore(Audiostream,"Audiostream",10000,NULL,3,NULL,0);
   //xTaskCreatePinnedToCore(everloopAnimation,"everloopAnimation",4096,NULL,5,NULL,1);
   xTaskCreatePinnedToCore(AudioPlayTask,"AudioPlayTask",4096,NULL,3,NULL,1);
 
