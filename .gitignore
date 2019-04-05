@@ -3,4 +3,5 @@ MatrixVoiceAudioServer/sdkconfig
 MatrixVoiceAudioServerNoOTA/sdkconfig.old
 MatrixVoiceAudioServerNoOTA/sdkconfig
 MatrixVoiceAudioServerNoOTA/build
-MatrixVoiceAudioServer.ino.esp32.bin
+*.bin
+OTABuilder/build

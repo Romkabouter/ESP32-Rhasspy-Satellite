@@ -30,14 +30,18 @@
  *  - Restart the device by publishing hashed password to SITEID/restart
  *  - Adjustable framerate, more info at https://snips.gitbook.io/documentation/advanced-configuration/platform-configuration 
  *  - Rotating animation possible, not finished or used yet
- * v3.2:
+ * v3.3:
  *  - Added support for Rhasspy https://github.com/synesthesiam/rhasspy
  *  - Started implementing playBytes, not finished
+ * v3.4:
+ *  - Implemented playBytes, basics done but sometimes audio garbage out
  * ************************************************************************ */
 #include <WiFi.h>
 #include <ESPmDNS.h>
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
+#include <WebServer.h>
+#include <Update.h>
 #include <AsyncMqttClient.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
@@ -49,25 +53,35 @@
 #include "microphone_array.h"
 #include "microphone_core.h"
 #include "voice_memory_map.h"
+#include <thread>
+#include <chrono>
+
 extern "C" {
   #include "freertos/FreeRTOS.h"
   #include "freertos/timers.h"
   #include "freertos/event_groups.h"
 }
 #include "config.h"
-#include <math.h>
+#include "webpages.h"
 #include "RingBuf.h"
-#include "SoundData.h"
 
-//Some needed defines, should be obvious which ones to change
+/* ************************************************************************* *
+ *    DEFINES AND GLOBALS
+ * ************************************************************************ */
 #define RATE 16000
 #define SITEID "matrixvoice"
-#define MQTT_IP IPAddress(192, 168, 178, 194)
-#define MQTT_HOST "192.168.178.194"
+//Change to your own IP
+#define MQTT_IP IPAddress(192, 168, 0, 148)
+#define MQTT_HOST "192.168.0.148"
 #define MQTT_PORT 1883
 #define WIDTH 2
 #define CHANNELS 1
+#define DATA_CHUNK_ID 0x61746164
+#define FMT_CHUNK_ID 0x20746d66
+// Convert 4 byte little-endian to a long, 
+#define longword(bfr, ofs) (bfr[ofs+3] << 24 | bfr[ofs+2] << 16 |bfr[ofs+1] << 8 |bfr[ofs+0])
 
+//Matrix Voice
 namespace hal = matrix_hal;
 static hal::WishboneBus wb;
 static hal::Everloop everloop;
@@ -76,12 +90,15 @@ static hal::EverloopImage image1d;
 WiFiClient net;
 AsyncMqttClient asyncClient; //ASYNCH client to be able to handle huge messages like WAV files
 PubSubClient audioServer(net); //We also need a sync client, asynch leads to errors on the audio thread
+WebServer server(80);
 //Timers
 TimerHandle_t mqttReconnectTimer;
 TimerHandle_t wifiReconnectTimer;
 SemaphoreHandle_t wbSemaphore;
-
 //Globals
+const int kMaxWriteLength = 1024;
+uint8_t data[kMaxWriteLength];
+RingBuf<uint8_t, kMaxWriteLength*4> audioData;
 struct wavfile_header {
   char  riff_tag[4];    //4
   int   riff_length;    //4
@@ -97,127 +114,29 @@ struct wavfile_header {
   char  data_tag[4];    //4
   int   data_length;    //4
 };
-
 static struct wavfile_header header;
-const int EVERLOOP = BIT0; //Used to check if the everloop should be updated
+const int EVERLOOP = BIT0;
 const int ANIMATE = BIT1;
 const int PLAY = BIT2;
-static EventGroupHandle_t everloopGroup;
-static EventGroupHandle_t audioGroup;
-
-//Colors. TODO: implement code like bightnesss for color changing without coding
 int hotword_colors[4] = {0,255,0,0};
 int idle_colors[4] = {0,0,255,0};
 int wifi_disc_colors[4] = {255,0,0,0};
 int update_colors[4] = {0,0,0,255};
-int brightness = 50;
+int brightness = 15;
+int audioDelay = 3870;
 bool DEBUG = false; //If set to true, code will post several messages to topics in case of events
-bool boot = true;
 bool wifi_connected = false;
 bool hotword_detected = false;
-bool update = false;
+bool isUpdateInProgess =  false;
 //Change to your own password hash at https://www.md5hashgenerator.com/
 const char* passwordhash = "4b8d34978fafde81a85a1b91a09a881b";
+const char* host = "matrixvoice";
 int message_count;
 int CHUNK = 256; //set to multiplications of 256, voice return a set of 256
 int chunkValues[] = {32,64,128,256,512,1024};
-int inRate = 8000;
-int dataLength = 3598;
-
-//Dynamic topics for MQTT
-std::string audioFrameTopic = std::string("hermes/audioServer/") + SITEID + std::string("/audioFrame");
-std::string playFinishedTopic = std::string("hermes/audioServer/") + SITEID + std::string("/playFinished");
-std::string playBytesTopic = std::string("hermes/audioServer/") + SITEID + std::string("/playBytes/#");
-std::string rhasspyWakeTopic = std::string("rhasspy/nl/transition/HermesWakeListener");
-std::string toggleOffTopic = "hermes/hotword/toggleOff";
-std::string toggleOnTopic = "hermes/hotword/toggleOn";
-std::string everloopTopic = SITEID + std::string("/everloop");
-std::string debugTopic = SITEID + std::string("/debug");
-std::string audioTopic = SITEID + std::string("/audio");
-std::string restartTopic = SITEID + std::string("/restart");
-
-//uint8_t SineValues[512]; 
-//uint16_t mapped[1024]; 
-uint8_t Data[45000]; 
-int played = 0;
-int offset = 0;
-
-//RingBuf<uint8_t, 41780> myBuffer;
-
-// Wav Class functions 
-
-#define DATA_CHUNK_ID 0x61746164
-#define FMT_CHUNK_ID 0x20746d66
-// Convert 4 byte little-endian to a long.
-#define longword(bfr, ofs) (bfr[ofs+3] << 24 | bfr[ofs+2] << 16 |bfr[ofs+1] << 8 |bfr[ofs+0])
-
-// The Main Wave class for sound samples
-class XT_Wav_Class
-{
-  protected:
-  //uint32_t CalcPlayTime();
-  
-  public:      
-  uint16_t SampleRate;  
-  uint32_t DataSize=0;                         // The last integer part of count
-  uint32_t DataStart;     // offset of the actual data.
-  uint32_t DataIdx;
-  const unsigned char *Data;  
-  float IncreaseBy=0;                         // The amount to increase the counter by per call to "onTimer"
-  float Count=0;                              // The counter counting up, we check this to see if we need to send
-  int32_t LastIntCount=-1;                    // The last integer part of count
-  
-  // constructors
-  XT_Wav_Class(const unsigned char *WavData);
-  
-  // functions
-  //uint8_t NextByte()override;
-  void Init();                // initialize any default values
-};
-
-XT_Wav_Class::XT_Wav_Class(const unsigned char *WavData)
-{
-   // create a new wav class object
-   unsigned long ofs, siz;
-
-   // Process the chunks.  "fmt " is format, "data" is the samples, ignore all else.
-   ofs = 12;
-   siz = longword(WavData, 4);
-   SampleRate = DataStart = 0;
-   while (ofs < siz) {
-      if (longword(WavData, ofs) == DATA_CHUNK_ID) {
-        DataSize = longword(WavData, ofs+4);
-        DataIdx = DataStart = ofs +8;
-      }
-      if (longword(WavData, ofs) == FMT_CHUNK_ID) {
-        SampleRate = longword(WavData, ofs+12);
-      }
-      ofs += longword(WavData, ofs+4) + 8;  
-   }
-   //IncreaseBy=float(SampleRate)/50000;
-   //PlayingTime = 1000. * DataSize / SampleRate;
-   //Data=WavData;
-}
-
-/*
-void InitSineValues()
-{
-  float ConversionFactor=(2*3.142)/256;           // convert my 0-255 bits in a circle to radians
-                            // there are 2 x PI radians in a circle hence the 2*PI
-                            // Then divide by 256 to get the value in radians
-                            // for one of my 0-255 bits.
-  float RadAngle;                                 // Angle in Radians, have to have this as computers love radians!
-  // calculate sine values
-  for(int MyAngle=0;MyAngle<256;MyAngle++) {
-    RadAngle=MyAngle*ConversionFactor;              // 8 bit angle converted to radians
-    SineValues[MyAngle]=(sin(RadAngle)*127)+128;    // get the sine of this angle and 'shift' up so
-                            // there are no negative values in the data
-                            // as the DAC does not understand them and would
-                            // convert to positive values.
-  }
-}
-*/
-
+int inRate = 44100;
+static EventGroupHandle_t everloopGroup;
+static EventGroupHandle_t audioGroup;
 //This is used to be able to change brightness, while keeping the colors appear the same
 //Called gamma correction, check this https://learn.adafruit.com/led-tricks-gamma-correction/the-issue
 const uint8_t PROGMEM gamma8[] = {
@@ -238,9 +157,55 @@ const uint8_t PROGMEM gamma8[] = {
   177,180,182,184,186,189,191,193,196,198,200,203,205,208,210,213,
   215,218,220,223,225,228,231,233,236,239,241,244,247,249,252,255 };
 
-// ---------------------------------------------------------------------------
-// Network functions
-// ---------------------------------------------------------------------------
+
+/* ************************************************************************* *
+ *    MQTT TOPICS
+ * ************************************************************************ */
+//Dynamic topics for MQTT
+std::string audioFrameTopic = std::string("hermes/audioServer/") + SITEID + std::string("/audioFrame");
+std::string playFinishedTopic = std::string("hermes/audioServer/") + SITEID + std::string("/playFinished");
+std::string playBytesTopic = std::string("hermes/audioServer/") + SITEID + std::string("/playBytes/#");
+std::string rhasspyWakeTopic = std::string("rhasspy/nl/transition/HermesWakeListener");
+std::string toggleOffTopic = "hermes/hotword/toggleOff";
+std::string toggleOnTopic = "hermes/hotword/toggleOn";
+std::string everloopTopic = SITEID + std::string("/everloop");
+std::string debugTopic = SITEID + std::string("/debug");
+std::string audioTopic = SITEID + std::string("/audio");
+std::string restartTopic = SITEID + std::string("/restart");
+
+/* ************************************************************************* *
+ *    HELPER CLASS FOR WAVE HEADER, taken from https://www.xtronical.com/
+ *    Changed to fit my needs
+ * ************************************************************************ */
+class XT_Wav_Class
+{
+  public:      
+  uint16_t SampleRate;  
+  uint32_t DataStart;     // offset of the actual data.
+  // constructors
+  XT_Wav_Class(const unsigned char *WavData);
+};
+
+XT_Wav_Class::XT_Wav_Class(const unsigned char *WavData)
+{
+   unsigned long ofs, siz;
+   ofs = 12;
+   siz = longword(WavData, 4);
+   SampleRate = DataStart = 0;
+   while (ofs < siz) {
+      if (longword(WavData, ofs) == DATA_CHUNK_ID) {
+        DataStart = ofs +8;
+      }
+      if (longword(WavData, ofs) == FMT_CHUNK_ID) {
+        SampleRate = longword(WavData, ofs+12);
+      }
+      ofs += longword(WavData, ofs+4) + 8;  
+   }
+}
+
+/* ************************************************************************* *
+ *    NETWORK FUNCTIONS AND MQTT 
+ * ************************************************************************ */
 void connectToWifi() {
   Serial.println("Connecting to Wi-Fi...");
   WiFi.begin(SSID, PASSWORD);
@@ -291,6 +256,7 @@ void onMqttConnect(bool sessionPresent) {
   asyncClient.subscribe(everloopTopic.c_str(),0);
   asyncClient.subscribe(restartTopic.c_str(),0);
   asyncClient.subscribe(audioTopic.c_str(),0);
+  asyncClient.subscribe(debugTopic.c_str(),0);
   xEventGroupClearBits(everloopGroup,ANIMATE);
 }
 
@@ -299,9 +265,11 @@ void onMqttConnect(bool sessionPresent) {
 // ---------------------------------------------------------------------------
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
   Serial.println("Disconnected from MQTT.");
-  xEventGroupSetBits(everloopGroup, ANIMATE);
-  if (WiFi.isConnected()) {
-    xTimerStart(mqttReconnectTimer, 0);
+  if (!isUpdateInProgess) {
+     xEventGroupSetBits(everloopGroup, ANIMATE);
+     if (WiFi.isConnected()) {
+      xTimerStart(mqttReconnectTimer, 0);
+     }
   }
 }
 
@@ -313,36 +281,18 @@ void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
 // ---------------------------------------------------------------------------
 void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) {
   std::string topicstr(topic);
-  if (index == 0) {
-    //when the index is 0, we have the start of a message
-    if (topicstr.find("playBytes") != std::string::npos) {
- //     offset = 0;
- //     played = 0;
-//      XT_Wav_Class Message((const uint8_t *)payload); 
-//      inRate = Message.SampleRate;
-//      dataLength = Message.DataSize;
-//      Serial.println(inRate);
-//      Serial.println(dataLength);
-//      myBuffer.clear();
-//      Serial.println(len);
-//      Serial.println(Message.DataIdx);  
-//      for (uint32_t s = Message.DataIdx; s < len; s++) {
-//        Data[offset] = payload[s];
-//        offset++;
-          //myBuffer.push(payload[s]);
-          //if (myBuffer.isFull()) {
-          //  xEventGroupSetBits(audioGroup, PLAY);
-         // }
-//      }
-     // Serial.println(len-Message.DataIdx);
-    //  Serial.println(myBuffer.size());       
-//    }
-  }
-  //No if else construction, otherwise we would miss out on messages where the whole message is recieved in 1 partial message
-  if (len + index >= total) {
+  if (len + index == total) {
     //when len + index is total, we have reached the end of the message.
     //We can then do work on it
-    if (topicstr.find("toggleOff") != std::string::npos) {
+    if (topicstr.find("debug") != std::string::npos) {
+       StaticJsonBuffer<300> jsonBuffer;
+      JsonObject& root = jsonBuffer.parseObject((char *) payload);
+      if (root.success()) {
+        if (root.containsKey("sleep")) {
+          audioDelay = root["sleep"];          
+        }
+      }     
+    } else if (topicstr.find("toggleOff") != std::string::npos) {
       std::string payloadstr(payload);
       //Check if this is for us
       if (payloadstr.find(SITEID) != std::string::npos) {
@@ -372,20 +322,20 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
       std::string s  = "{\"id\":\"" + topicstr.substr(pos,37) + "\",\"siteId\":\"" + SITEID + "\",\"sessionId\":null}";
       if (asyncClient.connected()) {
         asyncClient.publish(playFinishedTopic.c_str(), 0, false, s.c_str());
-      }
-/*      
+      }      
+      //fill the ringbuffer
       for (uint32_t s = 0; s < len; s++) {
-            Data[offset] = payload[s];
-            offset++;
-          if (!myBuffer.isFull()) {
-            myBuffer.push(payload[s]);
+          if (audioData.isFull()) {
+            //start playing is the buffer is full
+            if( xEventGroupGetBits( audioGroup ) != PLAY  ) {
+              xEventGroupSetBits(audioGroup, PLAY);
+            }
           }
-          if (myBuffer.isFull()) {
-            xEventGroupSetBits(audioGroup, PLAY);
+          while (audioData.isFull()) {
+            delay(1);
           }
-      }
-      xEventGroupSetBits(audioGroup, PLAY);
- */
+          audioData.push(payload[s]);
+      }        
     } else if (topicstr.find(everloopTopic.c_str()) != std::string::npos) {
       StaticJsonBuffer<300> jsonBuffer;
       JsonObject& root = jsonBuffer.parseObject((char *) payload);
@@ -450,32 +400,50 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
           }
         }
       }
-    }
-  }
-  if (len + index < total) {
-     //partial message
- /*   if (topicstr.find("playBytes") != std::string::npos) {
-       for (uint32_t s = 0; s < len; s++) {
-          Data[offset] = payload[s];
-          offset++;
-          //if (!myBuffer.isFull()) {
-          // myBuffer.push(payload[s]);
-          //}
-          //if (myBuffer.isFull()) {
-          //  xEventGroupSetBits(audioGroup, PLAY);
-          //}
+    }   
+  } else {
+    //len + index < total ==> partial message   
+    if (topicstr.find("playBytes") != std::string::npos) {
+      if (index == 0) {
+        //when the index is 0, we have the start of a message
+        XT_Wav_Class Message((const uint8_t *)payload); 
+        inRate = Message.SampleRate;
+        
+        //Clear RingBuffer
+        audioData.clear();
+        
+        for (uint32_t s = Message.DataStart; s < len; s++) {
+            //skip first 44 bytes of the wav header
+            if (audioData.isFull()) {
+              if( xEventGroupGetBits( audioGroup ) != PLAY  ) {
+                xEventGroupSetBits(audioGroup, PLAY);
+              }
+            }
+            while (audioData.isFull()) {
+              delay(1);
+            }
+            audioData.push(payload[s]);
+        }        
+      }  else {
+        for (uint32_t s = 0; s < len; s++) {
+            if (audioData.isFull()) {
+              if( xEventGroupGetBits( audioGroup ) != PLAY  ) {
+                xEventGroupSetBits(audioGroup, PLAY);
+              }
+            }
+            while (audioData.isFull()) {
+              delay(1);
+            }
+            audioData.push(payload[s]);
+        }        
       }
-      //for (int i = 0; i < offset; i++){
-      //  printf("%d\n",Data[i]);         
-     // }
-     */
     }
-  }
+  }  
 }
 
-// ---------------------------------------------------------------------------
-// Audiostream -  uses SYNC MQTT client
-// ---------------------------------------------------------------------------
+/* ************************************************************************* *
+ *    AUDIOSTREAM TASK, USES SYNCED MQTT CLIENT
+ * ************************************************************************ */
 void Audiostream( void * p ) {
    for(;;){
      // See if we can obtain or "Take" the Serial Semaphore.
@@ -513,7 +481,9 @@ void Audiostream( void * p ) {
   vTaskDelete(NULL);
 }
 
-
+/* ************************************************************************ *
+ *    LED ANIMATION TASK
+ * ************************************************************************ */
 void everloopAnimation(void * p) {
     int position = 0;
     int red;
@@ -544,6 +514,9 @@ void everloopAnimation(void * p) {
     vTaskDelete(NULL);  
 }
 
+/* ************************************************************************ *
+ *    LED RING TASK
+ * ************************************************************************ */
 void everloopTask(void * p){
     while(1){
       xEventGroupWaitBits(everloopGroup,EVERLOOP,true,true,portMAX_DELAY); //Wait for the bit before updating
@@ -557,7 +530,7 @@ void everloopTask(void * p){
         int g = 0;
         int b = 0;
         int w = 0;
-        if (update) {
+        if (isUpdateInProgess) {
           r = update_colors[0];
           g = update_colors[1];
           b = update_colors[2];
@@ -602,24 +575,25 @@ void everloopTask(void * p){
     vTaskDelete(NULL);
 }
 
+/* ************************************************************************ *
+ *    AUDIO OUTPUT TASK
+ * ************************************************************************ */
 void AudioPlayTask(void * p){
   while(1) {
     xEventGroupWaitBits(audioGroup,PLAY,true,true,portMAX_DELAY); //Wait for the bit before updating
-      if ( xSemaphoreTake( wbSemaphore, ( TickType_t ) 5000 ) == pdTRUE )
+      if ( xSemaphoreTake( wbSemaphore, ( TickType_t ) 10000 ) == pdTRUE )
       {
         Serial.println("Play Audio");
-        //Serial.println(inRate);
-        int NUM = 512;
-        while (played < dataLength) {
-          uint8_t data[NUM];
-          for (int i = 0; i < NUM; i++) {
-            data[i] = Data[played+i];
-          }
-          played = played + NUM;         
-          wb.SpiWrite(hal::kDACBaseAddress, (uint8_t *) data, sizeof(data));
-         //delay: 1 000 000 microseconds in a second, 8000 samples / second (for a 8khz file)
-         //that will be 1 000 000 / 8000 microsecond per sample, we read NUM samples
-          delayMicroseconds( NUM *  ( 1000000 / inRate ) );
+        while(!audioData.isEmpty())
+        {
+            for (int i = 0; i < kMaxWriteLength; i++) 
+            {
+              if (!audioData.isEmpty()) {
+                audioData.pop(data[i]);
+              }
+            }
+            wb.SpiWrite(hal::kDACBaseAddress,(const uint8_t *)data, sizeof(uint16_t) * kMaxWriteLength/2);
+            std::this_thread::sleep_for(std::chrono::microseconds(audioDelay));
         }
         xEventGroupClearBits(audioGroup, PLAY);
         xSemaphoreGive( wbSemaphore ); //Free for all
@@ -628,10 +602,10 @@ void AudioPlayTask(void * p){
   vTaskDelete(NULL);
 }
 
+/* ************************************************************************ *
+ *    SETUP
+ * ************************************************************************ */
 void setup() {  
-
-//  InitSineValues();
-  
   //Implementation of Semaphore, otherwise the ESP will crash due to read of the mics
   if ( wbSemaphore == NULL )  //Not yet been created?
   {
@@ -700,22 +674,72 @@ void setup() {
   }
 
   //Create the runnings tasks, AudioStream is on 1 core, the rest on the other core
-  xTaskCreatePinnedToCore(Audiostream,"Audiostream",10000,NULL,3,NULL,0);
+  //xTaskCreatePinnedToCore(Audiostream,"Audiostream",10000,NULL,3,NULL,0);
   //xTaskCreatePinnedToCore(everloopAnimation,"everloopAnimation",4096,NULL,5,NULL,1);
-  //xTaskCreatePinnedToCore(AudioPlayTask,"AudioPlayTask",4096,NULL,3,NULL,1);
-    
+  xTaskCreatePinnedToCore(AudioPlayTask,"AudioPlayTask",4096,NULL,3,NULL,1);
+
+  if (!MDNS.begin(host)) { //http://ho.local
+    Serial.println("Error setting up MDNS responder!");
+    while (1) {
+      delay(1000);
+    }
+  }
+
+  server.on("/", HTTP_GET, []() {
+    server.sendHeader("Connection", "close");
+    server.send(200, "text/html", loginIndex);
+  });
+  server.on("/serverIndex", HTTP_GET, []() {
+    server.sendHeader("Connection", "close");
+    server.send(200, "text/html", serverIndex);
+  });
+  server.on("/update", HTTP_POST, []() {
+    server.sendHeader("Connection", "close");
+    server.send(200, "text/plain", (Update.hasError()) ? "FAIL" : "OK");
+    ESP.restart();
+  }, []() {
+    HTTPUpload& upload = server.upload();
+    if (upload.status == UPLOAD_FILE_START) {
+      isUpdateInProgess = true;
+      xTimerStop(mqttReconnectTimer, 0);
+      xTimerStop(wifiReconnectTimer, 0);
+      audioServer.disconnect();
+      asyncClient.disconnect();
+      xEventGroupSetBits(everloopGroup, EVERLOOP);
+      Serial.printf("Update: %s\n", upload.filename.c_str());
+      if (!Update.begin(UPDATE_SIZE_UNKNOWN)) { //start with max available size
+        Update.printError(Serial);
+      }
+    } else if (upload.status == UPLOAD_FILE_WRITE) {
+      if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+        Update.printError(Serial);
+      }
+    } else if (upload.status == UPLOAD_FILE_END) {
+      if (Update.end(true)) { //true to set the size to the current progress
+        Serial.printf("Update Success: %u\nRebooting...\n", upload.totalSize);
+      } else {
+        Update.printError(Serial);
+      }
+    }
+  });
+  server.begin();
+  
   // ---------------------------------------------------------------------------
   // ArduinoOTA stuff
   // ---------------------------------------------------------------------------
-  ArduinoOTA.setHostname("MatrixVoice");  
+  ArduinoOTA.setHostname(host);  
   ArduinoOTA.setPasswordHash(passwordhash);
   ArduinoOTA
     .onStart([]() {
-      update = true;
+      isUpdateInProgess = true;
+      xTimerStop(mqttReconnectTimer, 0);
+      xTimerStop(wifiReconnectTimer, 0);
+      audioServer.disconnect();
+      asyncClient.disconnect();
       xEventGroupSetBits(everloopGroup, EVERLOOP);
     })
     .onEnd([]() {
-      update = false;
+      isUpdateInProgess = false;
       Serial.println("\nEnd");
     })
     .onProgress([](unsigned int progress, unsigned int total) {
@@ -730,12 +754,18 @@ void setup() {
       else if (error == OTA_END_ERROR) Serial.println("End Failed");
     });
 
-  ArduinoOTA.begin();
+ // ArduinoOTA.begin();
 }
 
+/* ************************************************************************ *
+ *    MAIN LOOP
+ * ************************************************************************ */
 void loop() {
-  ArduinoOTA.handle();
-  if (!audioServer.connected()) {
+ // ArduinoOTA.handle();
+  delay(500);  
+  server.handleClient();
+  delay(500);  
+  if (!audioServer.connected() && !isUpdateInProgess) {
     connectAudio();
   }
 }

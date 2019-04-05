@@ -1,0 +1,1 @@
+tar cf - *.bin | ssh pi@192.168.0.182 'tar xf - -C /tmp;sudo voice_esp32_reset;voice_esptool --chip esp32 --port /dev/ttyS0 --baud 115200 --before default_reset --after hard_reset write_flash -u --flash_mode dio --flash_freq 40m --flash_size detect 0x1000 /tmp/bootloader.bin 0x10000 /tmp/MatrixVoiceAudioServer.ino.esp32.bin 0x8000 /tmp/partitions_singleapp.bin'
