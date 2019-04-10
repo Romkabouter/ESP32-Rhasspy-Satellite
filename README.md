@@ -33,8 +33,11 @@ In there is a program in c++, which does nothing but if you do a make menuconfig
 When you do a make, the partitions_two_ota.bin will be in the build folder and the bootloader.bin in the build/bootloader folder.
 
 To flash the OTA version for the first time, attach the Voice to a Raspberry Pi. 
+- Get the HAL code from https://github.com/matrix-io/matrixio_hal_esp32/tree/master/components/hal
 - Copy the folder "hal" to your Arduino IDE libraries folder
 - Add to Arduino IDE: AsynchMqttClient https://github.com/marvinroger/async-mqtt-client
+- Be sure to check this pull request: https://github.com/marvinroger/async-mqtt-client/pull/117
+  This code uses disconnect(), which will cause the MatrixVoice to crash if the fix from the PR is not in it.
 - Download and add to Arduino IDE: https://github.com/me-no-dev/AsyncTCP
 - Add to Arduino IDE: PubSubClient by Nick O'Leary https://github.com/knolleary/pubsubclient
 - Add to Arduino IDE: ArduinoJson. Be sure to install version 5 (latest) and not 6. Version 6 this is still beta.
@@ -51,7 +54,7 @@ To flash the OTA version for the first time, attach the Voice to a Raspberry Pi.
 - Remove the voice from the Pi and plug the power into the Voice with a micro usb cable, the Voice should start
 - Open your Arduino IDE again, after a while the Matrix Voice should show up as a network port, select this port
 - Make a change (or not) and do a Sketch -> Upload. The leds will turn WHITE
-- Sometimes uploading fails, just retry untill it succeeds
+- Sometimes uploading fails, just retry untill it succeeds or use the Webserver upload.
 
 If you change code and OTA does not work anymore for some reason, you can always start over by doing the "get started" part except for the first bullit 
 

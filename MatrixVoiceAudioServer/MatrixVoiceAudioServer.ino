@@ -93,6 +93,7 @@ WebServer server(80);
 //Timers
 TimerHandle_t mqttReconnectTimer;
 TimerHandle_t wifiReconnectTimer;
+TaskHandle_t audioTaskHandle;
 SemaphoreHandle_t wbSemaphore;
 //Globals
 const int kMaxWriteLength = 1024;
@@ -129,6 +130,7 @@ bool isUpdateInProgess =  false;
 //Change to your own password hash at https://www.md5hashgenerator.com/
 const char* passwordhash = "4b8d34978fafde81a85a1b91a09a881b";
 const char* host = "matrixvoice";
+std::string finishedMsg = "";
 int message_count;
 int samplerate;
 int CHUNK = 256; //set to multiplications of 256, voice return a set of 256
@@ -309,10 +311,7 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
     } else if (topicstr.find("playBytes") != std::string::npos) {
       //Get the ID from the topic
       int pos = 19 + strlen(SITEID) + 11;
-      std::string s  = "{\"id\":\"" + topicstr.substr(pos,37) + "\",\"siteId\":\"" + SITEID + "\",\"sessionId\":null}";
-      if (asyncClient.connected()) {
-        asyncClient.publish(playFinishedTopic.c_str(), 0, false, s.c_str());
-      }      
+      finishedMsg = "{\"id\":\"" + topicstr.substr(pos,37) + "\",\"siteId\":\"" + SITEID + "\",\"sessionId\":null}";
       //fill the ringbuffer
       for (uint32_t s = 0; s < len; s++) {
           if (audioData.isFull()) {
@@ -400,6 +399,10 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
         samplerate = Message.SampleRate;
         
         //Clear RingBuffer
+        uint8_t b = 0;
+        for (int i = 0; i < kMaxWriteLength* 4;i++) {
+          audioData.push(b);
+        }
         audioData.clear();
         
         for (uint32_t s = Message.DataStart; s < len; s++) {
@@ -586,6 +589,14 @@ void AudioPlayTask(void * p){
             wb.SpiWrite(hal::kDACBaseAddress,(const uint8_t *)data, sizeof(uint16_t) * kMaxWriteLength/2);
             std::this_thread::sleep_for(std::chrono::microseconds((int)sleep));
         }
+        if (asyncClient.connected()) {
+          asyncClient.publish(playFinishedTopic.c_str(), 0, false, finishedMsg.c_str());
+        }      
+        uint8_t b = 0;
+        for (int i = 0; i < kMaxWriteLength* 4;i++) {
+          audioData.push(b);
+        }
+        audioData.clear();
         xEventGroupClearBits(audioGroup, PLAY);
         xSemaphoreGive( wbSemaphore ); //Free for all
       }
@@ -665,11 +676,11 @@ void setup() {
   }
 
   //Create the runnings tasks, AudioStream is on 1 core, the rest on the other core
-  xTaskCreatePinnedToCore(Audiostream,"Audiostream",10000,NULL,3,NULL,0);
+  xTaskCreatePinnedToCore(Audiostream,"Audiostream",10000,NULL,3,&audioTaskHandle,0);
   //xTaskCreatePinnedToCore(everloopAnimation,"everloopAnimation",4096,NULL,5,NULL,1);
   xTaskCreatePinnedToCore(AudioPlayTask,"AudioPlayTask",4096,NULL,3,NULL,1);
 
-  if (!MDNS.begin(host)) { //http://ho.local
+  if (!MDNS.begin(host)) { 
     Serial.println("Error setting up MDNS responder!");
     while (1) {
       delay(1000);
@@ -692,11 +703,13 @@ void setup() {
     HTTPUpload& upload = server.upload();
     if (upload.status == UPLOAD_FILE_START) {
       isUpdateInProgess = true;
+      vTaskSuspend(audioTaskHandle);
       xTimerStop(mqttReconnectTimer, 0);
       xTimerStop(wifiReconnectTimer, 0);
       audioServer.disconnect();
       asyncClient.disconnect();
       xEventGroupSetBits(everloopGroup, EVERLOOP);
+      
       Serial.printf("Update: %s\n", upload.filename.c_str());
       if (!Update.begin(UPDATE_SIZE_UNKNOWN)) { //start with max available size
         Update.printError(Serial);
@@ -723,6 +736,7 @@ void setup() {
   ArduinoOTA
     .onStart([]() {
       isUpdateInProgess = true;
+      vTaskSuspend(audioTaskHandle);
       xTimerStop(mqttReconnectTimer, 0);
       xTimerStop(wifiReconnectTimer, 0);
       audioServer.disconnect();
@@ -745,17 +759,17 @@ void setup() {
       else if (error == OTA_END_ERROR) Serial.println("End Failed");
     });
 
- // ArduinoOTA.begin();
+  ArduinoOTA.begin();
 }
 
 /* ************************************************************************ *
  *    MAIN LOOP
  * ************************************************************************ */
 void loop() {
- // ArduinoOTA.handle();
-  delay(500);  
+  ArduinoOTA.handle();
+  delay(1000);  
   server.handleClient();
-  delay(500);  
+  delay(1000);  
   if (!audioServer.connected() && !isUpdateInProgess) {
     connectAudio();
   }
