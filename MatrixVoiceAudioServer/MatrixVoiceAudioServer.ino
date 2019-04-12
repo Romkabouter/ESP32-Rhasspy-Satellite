@@ -221,7 +221,7 @@ void connectToMqtt() {
 
 void connectAudio() {
  Serial.println("Connecting to synch MQTT...");
- audioServer.connect("MatrixVoiceAudio","paul","password");
+ audioServer.connect("MatrixVoiceAudio",MQTT_USER,MQTT_PASS);
 }
 
 // ---------------------------------------------------------------------------
@@ -636,7 +636,7 @@ void setup() {
   asyncClient.onDisconnect(onMqttDisconnect);
   asyncClient.onMessage(onMqttMessage);
   asyncClient.setServer(MQTT_IP, MQTT_PORT);
-  asyncClient.setCredentials("paul", "password");
+  asyncClient.setCredentials(MQTT_USER, MQTT_PASS);
   audioServer.setServer(MQTT_IP, 1883);  
   
 
