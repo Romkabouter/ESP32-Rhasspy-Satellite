@@ -78,7 +78,8 @@ extern "C" {
 #define DATA_CHUNK_ID 0x61746164
 #define FMT_CHUNK_ID 0x20746d66
 // Convert 4 byte little-endian to a long, 
-#define longword(bfr, ofs) (bfr[ofs+3] << 24 | bfr[ofs+2] << 16 |bfr[ofs+1] << 8 |bfr[ofs+0])
+#define longword(bfr, ofs) (bfr[ofs+3] << 24 | bfr[ofs+2] << 16 | bfr[ofs+1] << 8 | bfr[ofs+0])
+#define shortword(bfr, ofs) (bfr[ofs+1] << 8 |bfr[ofs+0])
 
 //Matrix Voice
 namespace hal = matrix_hal;
@@ -180,6 +181,7 @@ std::string restartTopic = SITEID + std::string("/restart");
 class XT_Wav_Class
 {
   public:      
+  uint16_t NumChannels; 
   uint16_t SampleRate;  
   uint32_t DataStart;     // offset of the actual data.
   // constructors
@@ -197,6 +199,7 @@ XT_Wav_Class::XT_Wav_Class(const unsigned char *WavData)
         DataStart = ofs +8;
       }
       if (longword(WavData, ofs) == FMT_CHUNK_ID) {
+        NumChannels = shortword(WavData, ofs+10);
         SampleRate = longword(WavData, ofs+12);
       }
       ofs += longword(WavData, ofs+4) + 8;  
@@ -218,7 +221,7 @@ void connectToMqtt() {
 
 void connectAudio() {
  Serial.println("Connecting to synch MQTT...");
- audioServer.connect("MatrixVoiceAudio");
+ audioServer.connect("MatrixVoiceAudio","paul","***REMOVED***");
 }
 
 // ---------------------------------------------------------------------------
@@ -397,6 +400,11 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
         //when the index is 0, we have the start of a message
         XT_Wav_Class Message((const uint8_t *)payload); 
         samplerate = Message.SampleRate;
+        char str[12];
+        sprintf(str, "%d", samplerate);
+        asyncClient.publish(debugTopic.c_str(),0, false, str);
+        sprintf(str, "%d", Message.NumChannels);
+        asyncClient.publish(debugTopic.c_str(),0, false, str);
         
         //Clear RingBuffer
         uint8_t b = 0;
@@ -577,16 +585,18 @@ void AudioPlayTask(void * p){
       if ( xSemaphoreTake( wbSemaphore, ( TickType_t ) 10000 ) == pdTRUE )
       {
         Serial.println("Play Audio");
-        float sleep = ((1000000 / samplerate) * (kMaxWriteLength/2)) / 3;
+        //devcfg.clock_speed_hz = 8 * 1000 * 1000; ==> not sure why sleep should be this????
+        float sleep = 8000000 / kMaxWriteLength / 2;
         while(!audioData.isEmpty())
         {
-            for (int i = 0; i < kMaxWriteLength; i++) 
+            int frames = 1024;
+            for (int i = 0; i < frames; i++) 
             {
               if (!audioData.isEmpty()) {
                 audioData.pop(data[i]);
               }
             }
-            wb.SpiWrite(hal::kDACBaseAddress,(const uint8_t *)data, sizeof(uint16_t) * kMaxWriteLength/2);
+            wb.SpiWrite(hal::kDACBaseAddress,(const uint8_t *)data, sizeof(uint8_t) * frames);
             std::this_thread::sleep_for(std::chrono::microseconds((int)sleep));
         }
         if (asyncClient.connected()) {
@@ -626,7 +636,9 @@ void setup() {
   asyncClient.onDisconnect(onMqttDisconnect);
   asyncClient.onMessage(onMqttMessage);
   asyncClient.setServer(MQTT_IP, MQTT_PORT);
+  asyncClient.setCredentials("paul", "***REMOVED***");
   audioServer.setServer(MQTT_IP, 1883);  
+  
 
   everloopGroup = xEventGroupCreate();
   audioGroup = xEventGroupCreate();
@@ -704,6 +716,7 @@ void setup() {
     if (upload.status == UPLOAD_FILE_START) {
       isUpdateInProgess = true;
       vTaskSuspend(audioTaskHandle);
+      xSemaphoreGive( wbSemaphore ); //Free for all
       xTimerStop(mqttReconnectTimer, 0);
       xTimerStop(wifiReconnectTimer, 0);
       audioServer.disconnect();
@@ -737,6 +750,7 @@ void setup() {
     .onStart([]() {
       isUpdateInProgess = true;
       vTaskSuspend(audioTaskHandle);
+      xSemaphoreGive( wbSemaphore ); //Free for all
       xTimerStop(mqttReconnectTimer, 0);
       xTimerStop(wifiReconnectTimer, 0);
       audioServer.disconnect();
