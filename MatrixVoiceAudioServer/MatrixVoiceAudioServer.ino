@@ -134,6 +134,7 @@ const char* host = "matrixvoice";
 std::string finishedMsg = "";
 int message_count;
 int samplerate;
+int numchannels;
 int CHUNK = 256; //set to multiplications of 256, voice return a set of 256
 int chunkValues[] = {32,64,128,256,512,1024};
 static EventGroupHandle_t everloopGroup;
@@ -317,8 +318,8 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
       finishedMsg = "{\"id\":\"" + topicstr.substr(pos,37) + "\",\"siteId\":\"" + SITEID + "\",\"sessionId\":null}";
       //fill the ringbuffer
       for (uint32_t s = 0; s < len; s++) {
-          if (audioData.isFull()) {
-            //start playing is the buffer is full
+          if (audioData.size() / audioData.maxSize() > 0.75) { 
+            //start playing is the buffer is half full
             if( xEventGroupGetBits( audioGroup ) != PLAY  ) {
               xEventGroupSetBits(audioGroup, PLAY);
             }
@@ -400,6 +401,7 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
         //when the index is 0, we have the start of a message
         XT_Wav_Class Message((const uint8_t *)payload); 
         samplerate = Message.SampleRate;
+        numchannels  = Message.NumChannels;
         char str[12];
         sprintf(str, "%d", samplerate);
         asyncClient.publish(debugTopic.c_str(),0, false, str);
@@ -415,7 +417,7 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
         
         for (uint32_t s = Message.DataStart; s < len; s++) {
             //skip first 44 bytes of the wav header
-            if (audioData.isFull()) {
+            if (audioData.size() / audioData.maxSize() > 0.75) {
               if( xEventGroupGetBits( audioGroup ) != PLAY  ) {
                 xEventGroupSetBits(audioGroup, PLAY);
               }
@@ -585,18 +587,18 @@ void AudioPlayTask(void * p){
       if ( xSemaphoreTake( wbSemaphore, ( TickType_t ) 10000 ) == pdTRUE )
       {
         Serial.println("Play Audio");
-        //devcfg.clock_speed_hz = 8 * 1000 * 1000; ==> not sure why sleep should be this????
-        float sleep = 8000000 / kMaxWriteLength / 2;
+        vTaskSuspend(audioTaskHandle);
+        float sleep = 8000000 / kMaxWriteLength / 2 ;
+        sleep = 1000000 / ( 16 / 8 * samplerate * numchannels / (kMaxWriteLength / numchannels) );
         while(!audioData.isEmpty())
         {
-            int frames = 1024;
-            for (int i = 0; i < frames; i++) 
+            for (int i = 0; i < kMaxWriteLength; i++) 
             {
               if (!audioData.isEmpty()) {
                 audioData.pop(data[i]);
               }
             }
-            wb.SpiWrite(hal::kDACBaseAddress,(const uint8_t *)data, sizeof(uint8_t) * frames);
+            wb.SpiWrite(hal::kDACBaseAddress,(const uint8_t *)data, sizeof(data));
             std::this_thread::sleep_for(std::chrono::microseconds((int)sleep));
         }
         if (asyncClient.connected()) {
@@ -609,6 +611,7 @@ void AudioPlayTask(void * p){
         audioData.clear();
         xEventGroupClearBits(audioGroup, PLAY);
         xSemaphoreGive( wbSemaphore ); //Free for all
+        vTaskResume(audioTaskHandle);
       }
   }
   vTaskDelete(NULL);
@@ -740,7 +743,7 @@ void setup() {
     }
   });
   server.begin();
-  
+
   // ---------------------------------------------------------------------------
   // ArduinoOTA stuff
   // ---------------------------------------------------------------------------
@@ -780,8 +783,8 @@ void setup() {
  *    MAIN LOOP
  * ************************************************************************ */
 void loop() {
-  ArduinoOTA.handle();
-  delay(1000);  
+  //ArduinoOTA.handle();
+  //delay(1000);  
   server.handleClient();
   delay(1000);  
   if (!audioServer.connected() && !isUpdateInProgess) {
