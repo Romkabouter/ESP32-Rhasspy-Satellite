@@ -80,7 +80,6 @@ extern "C" {
       DEFINES AND GLOBALS
  * ************************************************************************ */
 #define RATE 16000
-#define SITEID HOSTNAME
 #define WIDTH 2
 #define CHANNELS 1
 #define DATA_CHUNK_ID 0x61746164
@@ -104,7 +103,6 @@ PubSubClient audioServer(net);  // We also need a sync client, asynch leads to
 // Timers
 TimerHandle_t mqttReconnectTimer;
 TimerHandle_t wifiReconnectTimer;
-TaskHandle_t arduinoOtaTaskHandle;
 TaskHandle_t audioStreamHandle;
 TaskHandle_t audioPlayHandle;
 TaskHandle_t everloopTaskHandle;
@@ -760,13 +758,6 @@ void AudioPlayTask(void *p) {
     vTaskDelete(NULL);
 }
 
-void arduinoOtaTask(void *p) {
-    while (true) {
-        ArduinoOTA.handle();
-    }
-    vTaskDelete(NULL);
-}
-
 /* ************************************************************************ *
       SETUP
  * ************************************************************************ */
@@ -900,9 +891,6 @@ void setup() {
                             3, NULL, 1);
     xTaskCreatePinnedToCore(AudioPlayTask, "AudioPlayTask", 4096, NULL, 3,
                             &audioPlayHandle, 1);
-    // Give ArduinoOTA task a higher priority of 4
-    xTaskCreatePinnedToCore(arduinoOtaTask, "otaTask", 4096, NULL, 4,
-                            &arduinoOtaTaskHandle, 1);
 
     // start streaming
     xEventGroupSetBits(audioGroup, STREAM);
@@ -912,6 +900,7 @@ void setup() {
       MAIN LOOP
  * ************************************************************************ */
 void loop() {
+    ArduinoOTA.handle();
     if (!isUpdateInProgess) {
         long now = millis();
         if (!audioServer.connected()) {
