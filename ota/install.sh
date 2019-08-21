@@ -22,7 +22,7 @@ else
     cp ../.pio/build/esp32dev/firmware.bin .
     echo "Loading firmware: $FIRMWARE"
     echo ""
-    tar cf - *.bin | ssh pi@$1 'tar xf - -C /tmp;sudo voice_esp32_reset;voice_esptool --chip esp32 --port /dev/ttyS0 --baud 115200 --before default_reset --after hard_reset write_flash -u --flash_mode dio --flash_freq 40m --flash_size detect 0x1000 /tmp/bootloader.bin 0x10000 /tmp/firmware.bin 0x8000 /tmp/partitions_two_ota.bin'
+    tar cf - *.bin | ssh pi@$1 'tar xf - -C /tmp;sudo voice_esp32_reset;voice_esptool --chip esp32 --port /dev/ttyS0 --baud 1500000 --before default_reset --after hard_reset write_flash -u --flash_mode dio --flash_freq 40m --flash_size detect 0x1000 /tmp/bootloader.bin 0x10000 /tmp/firmware.bin 0x8000 /tmp/partitions_two_ota.bin'
     echo "done"
     echo ""
     echo "[SUCCESS] Please disconnect your MatrixVoice from the RaspberryPi and reconnect it alone for future OTA updates."
