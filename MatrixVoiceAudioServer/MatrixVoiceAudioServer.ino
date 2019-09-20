@@ -1,14 +1,14 @@
 /* ************************************************************************* *
    Matrix Voice Audio Streamer
 
-   This program is written to be a streaming audio server running on the Matrix Voice.
-  This is typically used for Snips.AI, it will then be able to replace
-   the Snips Audio Server, by publishing small wave messages to the hermes protocol
-   See https://snips.ai/ for more information
+   This program is written to be a streaming audio server running on the Matrix
+   Voice. This is typically used for Snips.AI or Rhasspy, it will then be able to replace the
+   Snips Audio Server, by publishing small wave messages to the hermes protocol
+   See https://snips.ai/ or https://rhasspy.readthedocs.io/en/latest/ for more information
 
    Author:  Paul Romkes
    Date:    September 2018
-   Version: 3.3
+   Version: 4.2
 
    Changelog:
    ==========
@@ -43,6 +43,8 @@
    v4.1:
     - Configurable mic gain
     - Fix on only listening to Dutch Rhasspy
+   v4.2:
+    - Support platformIO
  * ************************************************************************ */
 #include <WiFi.h>
 #include <ArduinoOTA.h>
@@ -663,8 +665,8 @@ void AudioPlayTask(void * p) {
               dataS[samples+3] = dataS[samples];
               dataS[samples+4] = dataS[samples];
               dataS[samples+5] = dataS[samples];
+              samples += 6;
             }
-            samples += 6;
             if(sizeof(uint16_t) * samples >= kMaxWriteLength) {
               wb.SpiWrite(hal::kDACBaseAddress, (const uint8_t *)dataS, kMaxWriteLength );
               std::this_thread::sleep_for(std::chrono::microseconds((int)sleep) );
