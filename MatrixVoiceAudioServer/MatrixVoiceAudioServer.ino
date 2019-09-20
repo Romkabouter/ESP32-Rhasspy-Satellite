@@ -193,6 +193,8 @@ class XT_Wav_Class
     uint16_t NumChannels;
     uint16_t SampleRate;
     uint32_t DataStart;     // offset of the actual data.
+    uint16_t Format;        // WAVE Format Code
+    uint16_t BitsPerSample; // WAVE bits per sample
     // constructors
     XT_Wav_Class(const unsigned char *WavData);
 };
@@ -208,8 +210,10 @@ XT_Wav_Class::XT_Wav_Class(const unsigned char *WavData)
       DataStart = ofs + 8;
     }
     if (longword(WavData, ofs) == FMT_CHUNK_ID) {
+      Format = shortword(WavData, ofs + 8);
       NumChannels = shortword(WavData, ofs + 10);
       SampleRate = longword(WavData, ofs + 12);
+      BitsPerSample = shortword(WavData, ofs + 22);
     }
     ofs += longword(WavData, ofs + 4) + 8;
   }
@@ -626,7 +630,7 @@ void AudioPlayTask(void * p) {
       //class to get a waveheader
       XT_Wav_Class Message((const uint8_t *)WaveData);
       char str[100];
-      sprintf(str, "Samplerate: %d, Channels: %d", (int)Message.SampleRate, (int)Message.NumChannels);
+      sprintf(str, "Samplerate: %d, Channels: %d, Format: %04X, Bits per Sample: %04X", (int)Message.SampleRate, (int)Message.NumChannels, (int)Message.Format, (int)Message.BitsPerSample);
       asyncClient.publish(debugTopic.c_str(), 0, false, str);
       while (played < message_size) {
         int bytes_to_read = kMaxWriteLength;
@@ -646,13 +650,29 @@ void AudioPlayTask(void * p) {
         //convert the orginal data to 16bit buffer, so we can work with it if needed (resampling, make stereo)
 
         if (Message.NumChannels == 1) {
-          uint16_t dataS[bytes_to_read / 2];
-          for (int i = 0; i < bytes_to_read; i += 2) {
-            dataS[i / 2] = ((data[i] & 0xff) | (data[i + 1] << 8));
+          uint16_t dataS[bytes_to_read];
+          int samples = 0;
+          
+          for (int i = 0 ; i < bytes_to_read -2; i += 2) {
+            // dataS[samples] = ((data[i] & 0xff) | (data[i + 1] << 8));
+            dataS[samples] = shortword(data,i);   // make stereo out of mono
+            dataS[samples+1] = dataS[samples];
+            if(Message.SampleRate == 16000) {
+              // increase sample rate from 16000 to 48000 by factor x3
+              dataS[samples+2] = dataS[samples];
+              dataS[samples+3] = dataS[samples];
+              dataS[samples+4] = dataS[samples];
+              dataS[samples+5] = dataS[samples];
+            }
+            samples += 6;
+            if(sizeof(uint16_t) * samples >= kMaxWriteLength) {
+              wb.SpiWrite(hal::kDACBaseAddress, (const uint8_t *)dataS, kMaxWriteLength );
+              std::this_thread::sleep_for(std::chrono::microseconds((int)sleep) );
+              samples = 0;
+            }
           }
-          MakeStereo(dataS, bytes_to_read);
-          wb.SpiWrite(hal::kDACBaseAddress, (const uint8_t *)dataS, sizeof(uint16_t) * (bytes_to_read / Message.NumChannels) );
-          std::this_thread::sleep_for(std::chrono::microseconds((int)sleep * (2 / Message.NumChannels ) ));
+          wb.SpiWrite(hal::kDACBaseAddress, (const uint8_t *)dataS, sizeof(uint16_t) * samples );
+          std::this_thread::sleep_for(std::chrono::microseconds((int)sleep) );
         } else {
           wb.SpiWrite(hal::kDACBaseAddress, (const uint8_t *)data, sizeof(data));
           std::this_thread::sleep_for(std::chrono::microseconds((int)sleep));
