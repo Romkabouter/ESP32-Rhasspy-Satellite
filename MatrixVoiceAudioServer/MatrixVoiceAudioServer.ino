@@ -72,8 +72,8 @@ extern "C" {
 #define RATE 16000
 #define SITEID "matrixvoice"
 //Change to your own IP
-#define MQTT_IP IPAddress(192, 168, 43, 169)
-#define MQTT_HOST "192.168.43.169"
+#define MQTT_IP IPAddress(192, 168, 43, 54)
+#define MQTT_HOST "192.168.43.54"
 #define MQTT_PORT 1883
 #define WIDTH 2
 #define CHANNELS 1
@@ -747,7 +747,7 @@ void setup() {
 
   //Create the runnings tasks, AudioStream is on 1 core, the rest on the other core
   xTaskCreatePinnedToCore(Audiostream, "Audiostream", 10000, NULL, 3, &audioStreamHandle, 0);
-  xTaskCreatePinnedToCore(everloopAnimation, "everloopAnimation", 4096, NULL, 3, NULL, 1);
+  //xTaskCreatePinnedToCore(everloopAnimation, "everloopAnimation", 4096, NULL, 3, NULL, 1);
   xTaskCreatePinnedToCore(AudioPlayTask, "AudioPlayTask", 4096, NULL, 3, &audioPlayHandle, 1);
 
   //start streaming
@@ -766,6 +766,12 @@ void setup() {
     xEventGroupClearBits(audioGroup, PLAY);
     xSemaphoreGive( wbSemaphore );
     isUpdateInProgess = true;
+    if (audioStreamHandle != NULL) {
+        vTaskDelete(audioStreamHandle);
+    }
+    if (audioPlayHandle != NULL) {
+        vTaskDelete(audioPlayHandle);
+    }
     Serial.println("Uploading...");
     xEventGroupSetBits(everloopGroup, EVERLOOP);
     xTimerStop(wifiReconnectTimer, 0);
