@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"name": "PlatformIO",
+			"path": "PlatformIO"
+		}
+	],
+	"settings": {
+		"terminal.integrated.env.osx": {
+			"PATH": "/Users/paulromkes/.platformio/penv/bin:/Users/paulromkes/.platformio/penv:/Users/paulromkes/.yarn/bin:/Users/paulromkes/.config/yarn/global/node_modules/.bin:/opt/local/bin:/opt/local/sbin:/Library/Frameworks/Python.framework/Versions/3.6/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/X11/bin:/Library/Frameworks/Mono.framework/Versions/Current/Commands:/Applications/Wireshark.app/Contents/MacOS:/Users/paulromkes/Library/Android/sdk/platform-tools/:/Users/paulromkes/esp/xtensa-esp32-elf/bin",
+			"PLATFORMIO_CALLER": "vscode"
+		}
+	}
+}

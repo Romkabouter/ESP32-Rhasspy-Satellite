@@ -649,6 +649,24 @@ void everloopTask(void *p) {
     vTaskDelete(NULL);
 }
 
+void MakeStereo(uint16_t buf[], const int len)
+{
+  for (int i = len / 2 - 1, j = len - 1; i > 0; --i) {
+    buf[j--] = buf[i];
+    buf[j--] = buf[i];
+  }
+}
+
+int gcd(int a, int b) { 
+   if (a == 0 || b == 0) 
+      return 0; 
+   else if (a == b) 
+      return a; 
+   else if (a > b) 
+      return gcd(a-b, b); 
+   else return gcd(a, b-a); 
+} 
+
 /* ************************************************************************ *
       AUDIO OUTPUT TASK
  * ************************************************************************ */
@@ -665,7 +683,7 @@ void AudioPlayTask(void *p) {
             float sleep =
                 1000000 / (16 / 8 * 44100 * 2 /
                            (kMaxWriteLength / 2));  // 2902,494331065759637
-            //sleep = 4000;                           // sounds better?
+            sleep = 3780;                           // sounds better?
             // Use CircularBuffer
             int played = 0;  // Skip header
             uint8_t WaveData[44];
@@ -682,6 +700,14 @@ void AudioPlayTask(void *p) {
                     (int)Message.SampleRate, (int)Message.NumChannels,
                     (int)Message.Format, (int)Message.BitsPerSample);
             asyncClient.publish(debugTopic.c_str(), 0, false, str);
+            if (Message.SampleRate < 44100) {
+                //find the upsample factor
+                int upsample = 1;
+                while (upsample * Message.SampleRate < 44100) {
+                    upsample++;
+                }
+            }
+
             while (played < message_size) {
                 int bytes_to_read = kMaxWriteLength;
                 if (message_size - played < kMaxWriteLength) {
@@ -702,37 +728,36 @@ void AudioPlayTask(void *p) {
                 // it if needed (resampling, make stereo)
 
                 if (Message.NumChannels == 1) {
-                    uint16_t dataS[bytes_to_read];
-                    int samples = 0;
-
-                    for (int i = 0; i < bytes_to_read - 2; i += 2) {
-                        // dataS[samples] = ((data[i] & 0xff) | (data[i + 1] <<
-                        // 8));
-                        dataS[samples] =
-                            shortword(data, i);  // make stereo out of mono
-                        dataS[samples + 1] = dataS[samples];
-                        if (Message.SampleRate == 16000) {
-                            // increase sample rate from 16000 to 48000 by
-                            // factor x3
-                            dataS[samples + 2] = dataS[samples];
-                            dataS[samples + 3] = dataS[samples];
-                            dataS[samples + 4] = dataS[samples];
-                            dataS[samples + 5] = dataS[samples];
-                            samples += 6;
-                        }
-                        if (sizeof(uint16_t) * samples >= kMaxWriteLength) {
-                            wb.SpiWrite(hal::kDACBaseAddress,
-                                        (const uint8_t *)dataS,
-                                        kMaxWriteLength);
-                            std::this_thread::sleep_for(
-                                std::chrono::microseconds((int)sleep));
-                            samples = 0;
-                        }
+                    uint16_t dataS[bytes_to_read / 2];
+                    for (int i = 0; i < bytes_to_read; i += 2) {
+                       dataS[i / 2] = ((data[i] & 0xff) | (data[i + 1] << 8));
                     }
-                    wb.SpiWrite(hal::kDACBaseAddress, (const uint8_t *)dataS,
-                                sizeof(uint16_t) * samples);
-                    std::this_thread::sleep_for(
-                        std::chrono::microseconds((int)sleep));
+                    MakeStereo(dataS, bytes_to_read);
+                    if(Message.SampleRate < 44100) {
+                        //Upsample to the caclulated rate, filling with 0
+                        uint16_t dataU[sizeof(dataS) * upsample];
+                        for (int i = 0; i < sizeof(dataS); i++) {
+                            dataU[i] = dataS[i];
+                            int x = 1;
+                            while (x < upsample) {
+                                dataU[i+x] = 0;
+                                x++;
+                            }
+                        }
+                        //Smooth the sample with interpolation
+                    }
+                    /*
+                    if(Message.SampleRate == 16000) {
+                        // increase sample rate from 16000 to 48000 by factor x3
+                        dataS[samples+2] = dataS[samples];
+                        dataS[samples+3] = dataS[samples];
+                        dataS[samples+4] = dataS[samples];
+                        dataS[samples+5] = dataS[samples];
+                        samples += 6;
+                    }                    
+                    */
+                    wb.SpiWrite(hal::kDACBaseAddress, (const uint8_t *)dataS, sizeof(uint16_t) * (bytes_to_read / Message.NumChannels) );
+                    std::this_thread::sleep_for(std::chrono::microseconds((int)sleep * (2 / Message.NumChannels ) ));
                 } else {
                     wb.SpiWrite(hal::kDACBaseAddress, (const uint8_t *)data,
                                 sizeof(data));
