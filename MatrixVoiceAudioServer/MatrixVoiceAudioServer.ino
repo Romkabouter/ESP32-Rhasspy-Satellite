@@ -72,11 +72,6 @@ extern "C" {
       DEFINES AND GLOBALS
  * ************************************************************************ */
 #define RATE 16000
-#define SITEID "matrixvoice"
-//Change to your own IP
-#define MQTT_IP IPAddress(192, 168, 43, 54)
-#define MQTT_HOST "192.168.43.54"
-#define MQTT_PORT 1883
 #define WIDTH 2
 #define CHANNELS 1
 #define DATA_CHUNK_ID 0x61746164
@@ -147,9 +142,9 @@ bool audioOK = true;
 bool wifi_connected = false;
 bool hotword_detected = false;
 bool isUpdateInProgess =  false;
-//Change to your own password hash at https://www.md5hashgenerator.com/
-const char* passwordhash = "4b8d34978fafde81a85a1b91a09a881b";
-const char* host = "matrixvoice";
+
+const char* passwordhash = OTA_MD5_PW_HASH;
+const char* host = OTA_HOST;
 std::string finishedMsg = "";
 int message_count;
 int CHUNK = 256; //set to multiplications of 256, voice return a set of 256
