@@ -72,15 +72,18 @@ extern "C" {
       DEFINES AND GLOBALS
  * ************************************************************************ */
 #define RATE 16000
-#define SITEID "matrixvoice"
-//Change to your own IP
-#define MQTT_IP IPAddress(192, 168, 43, 54)
-#define MQTT_HOST "192.168.43.54"
-#define MQTT_PORT 1883
 #define WIDTH 2
 #define CHANNELS 1
 #define DATA_CHUNK_ID 0x61746164
 #define FMT_CHUNK_ID 0x20746d66
+
+// These parameters enable you to select the default value for output
+enum {
+  AMP_OUT_SPEAKERS = 0,
+  AMP_OUT_HEADPHONES
+};
+uint16_t ampOutInterf = AMP_OUT_HEADPHONES;
+
 // Convert 4 byte little-endian to a long,
 #define longword(bfr, ofs) (bfr[ofs+3] << 24 | bfr[ofs+2] << 16 | bfr[ofs+1] << 8 | bfr[ofs+0])
 #define shortword(bfr, ofs) (bfr[ofs+1] << 8 |bfr[ofs+0])
@@ -139,9 +142,9 @@ bool audioOK = true;
 bool wifi_connected = false;
 bool hotword_detected = false;
 bool isUpdateInProgess =  false;
-//Change to your own password hash at https://www.md5hashgenerator.com/
-const char* passwordhash = "4b8d34978fafde81a85a1b91a09a881b";
-const char* host = "matrixvoice";
+
+const char* passwordhash = OTA_MD5_PW_HASH;
+const char* host = OTA_HOST;
 std::string finishedMsg = "";
 int message_count;
 int CHUNK = 256; //set to multiplications of 256, voice return a set of 256
@@ -168,6 +171,8 @@ const uint8_t PROGMEM gamma8[] = {
   177, 180, 182, 184, 186, 189, 191, 193, 196, 198, 200, 203, 205, 208, 210, 213,
   215, 218, 220, 223, 225, 228, 231, 233, 236, 239, 241, 244, 247, 249, 252, 255
 };
+uint16_t ampOutInterfLast = 2;
+bool muteOverride = false;
 
 
 /* ************************************************************************* *
@@ -184,6 +189,8 @@ std::string everloopTopic = SITEID + std::string("/everloop");
 std::string debugTopic = SITEID + std::string("/debug");
 std::string audioTopic = SITEID + std::string("/audio");
 std::string restartTopic = SITEID + std::string("/restart");
+std::string outputSelectionTopic = SITEID + std::string("/selectOutput");
+std::string outputMuteTopic = SITEID + std::string("/muteOutput");
 
 /* ************************************************************************* *
       HELPER CLASS FOR WAVE HEADER, taken from https://www.xtronical.com/
@@ -281,6 +288,8 @@ void onMqttConnect(bool sessionPresent) {
   asyncClient.subscribe(restartTopic.c_str(), 0);
   asyncClient.subscribe(audioTopic.c_str(), 0);
   asyncClient.subscribe(debugTopic.c_str(), 0);
+  asyncClient.subscribe(outputSelectionTopic.c_str(), 0);
+  asyncClient.subscribe(outputMuteTopic.c_str(), 0);
   asyncClient.publish(debugTopic.c_str(), 0, false, "Connected to asynch MQTT!");
   //xEventGroupClearBits(everloopGroup, ANIMATE);
 }
@@ -428,6 +437,40 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
         if (root.containsKey("passwordhash")) {
           if (root["passwordhash"] == passwordhash) {
             ESP.restart();
+          }
+        }
+      } else {
+        asyncClient.publish(debugTopic.c_str(), 0, false, err.c_str());
+      }
+    } else if (topicstr.find(outputSelectionTopic.c_str()) != std::string::npos) {
+      std::string payloadstr(payload);
+      StaticJsonDocument<300> doc;
+      DeserializationError err = deserializeJson(doc, payloadstr.c_str());
+      if (!err) {
+        JsonObject root = doc.as<JsonObject>();
+        if (root.containsKey("select_output")) {
+          if (root["select_output"] == "headphones") {
+            ampOutInterf = AMP_OUT_HEADPHONES;
+          }
+          else if (root["select_output"] == "speakers") {
+            ampOutInterf = AMP_OUT_SPEAKERS;
+          }
+        }
+      } else {
+        asyncClient.publish(debugTopic.c_str(), 0, false, err.c_str());
+      }
+    } else if (topicstr.find(outputMuteTopic.c_str()) != std::string::npos) {
+      std::string payloadstr(payload);
+      StaticJsonDocument<300> doc;
+      DeserializationError err = deserializeJson(doc, payloadstr.c_str());
+      if (!err) {
+        JsonObject root = doc.as<JsonObject>();
+        if (root.containsKey("mute_output")) {
+          if (root["mute_output"] == "true") {
+            muteOverride = true;
+          }
+          else if (root["mute_output"] == "false") {
+            muteOverride = false;
           }
         }
       } else {
@@ -634,6 +677,17 @@ void AudioPlayTask(void * p) {
       char str[100];
       sprintf(str, "Samplerate: %d, Channels: %d, Format: %04X, Bits per Sample: %04X", (int)Message.SampleRate, (int)Message.NumChannels, (int)Message.Format, (int)Message.BitsPerSample);
       asyncClient.publish(debugTopic.c_str(), 0, false, str);
+
+      if(ampOutInterf != ampOutInterfLast) {
+        wb.SpiWrite(hal::kConfBaseAddress+11,(const uint8_t *)(&ampOutInterf), sizeof(uint16_t));
+        ampOutInterfLast = ampOutInterf;
+      }
+      
+      uint16_t muteValue = 0;
+      if(muteOverride == false) {
+        wb.SpiWrite(hal::kConfBaseAddress+10,(const uint8_t *)(&muteValue), sizeof(uint16_t));
+      }
+        
       while (played < message_size) {
         int bytes_to_read = kMaxWriteLength;
         if (message_size - played < kMaxWriteLength) {
@@ -680,6 +734,10 @@ void AudioPlayTask(void * p) {
           std::this_thread::sleep_for(std::chrono::microseconds((int)sleep));
         }
       }
+
+      muteValue = 1;
+      wb.SpiWrite(hal::kConfBaseAddress+10,(const uint8_t *)(&muteValue), sizeof(uint16_t));   
+
       asyncClient.publish(playFinishedTopic.c_str(), 0, false, finishedMsg.c_str());
       asyncClient.publish(debugTopic.c_str(), 0, false, "Done!");
       audioData.clear();
