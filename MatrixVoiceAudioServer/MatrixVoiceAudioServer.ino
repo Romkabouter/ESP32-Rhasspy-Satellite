@@ -8,7 +8,7 @@
 
    Author:  Paul Romkes
    Date:    September 2018
-   Version: 4.2
+   Version: 4.3
 
    Changelog:
    ==========
@@ -45,6 +45,9 @@
     - Fix on only listening to Dutch Rhasspy
    v4.2:
     - Support platformIO
+   v4.3:
+    - Add muting of output and switching of output port
+    - Reverted fix for 16000 wav messages, seems to cause trouble
  * ************************************************************************ */
 #include <WiFi.h>
 #include <ArduinoOTA.h>
@@ -417,9 +420,14 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
             asyncClient.publish(debugTopic.c_str(), 0, false, "Framerate should be 32,64,128,256,512 or 1024");
           }
         }
-        if (root.containsKey("mute")) {
-          //feels more intuitive to send mute
-          sendAudio = (root["mute"] == "on") ? false : true;
+        if (root.containsKey("mute_input")) {
+            sendAudio = (root["mute_input"] == "true") ? true : false;
+        }
+        if (root.containsKey("mute_output")) {
+            muteOverride = (root["mute_output"] == "true") ? true : false;
+        }
+        if (root.containsKey("amp_output")) {
+            ampOutInterf =  (root["amp_output"] == "0") ? AMP_OUT_SPEAKERS : AMP_OUT_HEADPHONES;
         }
         if (root.containsKey("gain")) {
           //feels more intuitive to send mute
@@ -437,40 +445,6 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
         if (root.containsKey("passwordhash")) {
           if (root["passwordhash"] == passwordhash) {
             ESP.restart();
-          }
-        }
-      } else {
-        asyncClient.publish(debugTopic.c_str(), 0, false, err.c_str());
-      }
-    } else if (topicstr.find(outputSelectionTopic.c_str()) != std::string::npos) {
-      std::string payloadstr(payload);
-      StaticJsonDocument<300> doc;
-      DeserializationError err = deserializeJson(doc, payloadstr.c_str());
-      if (!err) {
-        JsonObject root = doc.as<JsonObject>();
-        if (root.containsKey("select_output")) {
-          if (root["select_output"] == "headphones") {
-            ampOutInterf = AMP_OUT_HEADPHONES;
-          }
-          else if (root["select_output"] == "speakers") {
-            ampOutInterf = AMP_OUT_SPEAKERS;
-          }
-        }
-      } else {
-        asyncClient.publish(debugTopic.c_str(), 0, false, err.c_str());
-      }
-    } else if (topicstr.find(outputMuteTopic.c_str()) != std::string::npos) {
-      std::string payloadstr(payload);
-      StaticJsonDocument<300> doc;
-      DeserializationError err = deserializeJson(doc, payloadstr.c_str());
-      if (!err) {
-        JsonObject root = doc.as<JsonObject>();
-        if (root.containsKey("mute_output")) {
-          if (root["mute_output"] == "true") {
-            muteOverride = true;
-          }
-          else if (root["mute_output"] == "false") {
-            muteOverride = false;
           }
         }
       } else {
@@ -682,7 +656,8 @@ void AudioPlayTask(void * p) {
         wb.SpiWrite(hal::kConfBaseAddress+11,(const uint8_t *)(&ampOutInterf), sizeof(uint16_t));
         ampOutInterfLast = ampOutInterf;
       }
-      
+
+      //unmute output unless set to mute
       uint16_t muteValue = 0;
       if(muteOverride == false) {
         wb.SpiWrite(hal::kConfBaseAddress+10,(const uint8_t *)(&muteValue), sizeof(uint16_t));
@@ -706,6 +681,14 @@ void AudioPlayTask(void * p) {
         //convert the orginal data to 16bit buffer, so we can work with it if needed (resampling, make stereo)
 
         if (Message.NumChannels == 1) {
+          uint16_t dataS[bytes_to_read / 2];
+          for (int i = 0; i < bytes_to_read; i += 2) {
+             dataS[i / 2] = ((data[i] & 0xff) | (data[i + 1] << 8));
+          }
+          MakeStereo(dataS, bytes_to_read);
+          wb.SpiWrite(hal::kDACBaseAddress, (const uint8_t *)dataS, sizeof(uint16_t) * bytes_to_read );
+          std::this_thread::sleep_for(std::chrono::microseconds((int)sleep * 2 ));
+          /*
           uint16_t dataS[bytes_to_read];
           int samples = 0;
           
@@ -729,18 +712,22 @@ void AudioPlayTask(void * p) {
           }
           wb.SpiWrite(hal::kDACBaseAddress, (const uint8_t *)dataS, sizeof(uint16_t) * samples );
           std::this_thread::sleep_for(std::chrono::microseconds((int)sleep) );
+          */
         } else {
           wb.SpiWrite(hal::kDACBaseAddress, (const uint8_t *)data, sizeof(data));
           std::this_thread::sleep_for(std::chrono::microseconds((int)sleep));
         }
       }
 
+      //Mute the output
       muteValue = 1;
       wb.SpiWrite(hal::kConfBaseAddress+10,(const uint8_t *)(&muteValue), sizeof(uint16_t));   
 
       asyncClient.publish(playFinishedTopic.c_str(), 0, false, finishedMsg.c_str());
       asyncClient.publish(debugTopic.c_str(), 0, false, "Done!");
       audioData.clear();
+      //fix on led showing issue with audio
+      streamMessageCount = 500;
     }
     xEventGroupClearBits(audioGroup, PLAY);
     xSemaphoreGive( wbSemaphore );
@@ -812,6 +799,10 @@ void setup() {
   xEventGroupClearBits(everloopGroup, EVERLOOP);
   xEventGroupClearBits(everloopGroup, ANIMATE);
 
+  //Mute initial output
+  uint16_t muteValue = 1;
+  wb.SpiWrite(hal::kConfBaseAddress+10,(const uint8_t *)(&muteValue), sizeof(uint16_t));
+  
   xTaskCreatePinnedToCore(everloopTask, "everloopTask", 4096, NULL, 5, &everloopTaskHandle, 1);
   xEventGroupSetBits(everloopGroup, EVERLOOP);
 
@@ -897,9 +888,9 @@ void loop() {
     }
     if (now - lastCounterTick > 5000) {
        //reset every 5 seconds. Change leds if there is a problem
-       //number of messages should be slightly over 300 per 5 seconds
+       //number of messages should be slightly over 300 per 5 seconds. Set to 200 because 300 is too tight
        lastCounterTick = now;
-       if (streamMessageCount < 300) {
+       if (streamMessageCount < 200) {
         //issue with audiostreaming
         audioOK = false;
         xEventGroupSetBits(everloopGroup, EVERLOOP);

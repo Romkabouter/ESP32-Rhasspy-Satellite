@@ -8,7 +8,7 @@
 
    Author:  Paul Romkes
    Date:    September 2018
-   Version: 4.2
+   Version: 4.3
 
    Changelog:
    ==========
@@ -46,7 +46,10 @@
     - Fix on only listening to Dutch Rhasspy
    v4.2:
     - Support platformIO
- * ************************************************************************ */
+    v4.3:
+    - Force platform 1.9.0. Higher raises issues with the mic array
+    - Add muting of output and switching of output port
+* ************************************************************************ */
 
 #include <Arduino.h>
 
@@ -85,6 +88,14 @@ extern "C" {
 #define CHANNELS 1
 #define DATA_CHUNK_ID 0x61746164
 #define FMT_CHUNK_ID 0x20746d66
+
+// These parameters enable you to select the default value for output
+enum {
+  AMP_OUT_SPEAKERS = 0,
+  AMP_OUT_HEADPHONES
+};
+uint16_t ampOutInterf = AMP_OUT_HEADPHONES;
+
 // Convert 4 byte little-endian to a long,
 #define longword(bfr, ofs) \
     (bfr[ofs + 3] << 24 | bfr[ofs + 2] << 16 | bfr[ofs + 1] << 8 | bfr[ofs + 0])
@@ -174,6 +185,8 @@ const uint8_t PROGMEM gamma8[] = {
     180, 182, 184, 186, 189, 191, 193, 196, 198, 200, 203, 205, 208, 210, 213,
     215, 218, 220, 223, 225, 228, 231, 233, 236, 239, 241, 244, 247, 249, 252,
     255};
+uint16_t ampOutInterfLast = 2;
+bool muteOverride = false;
 
 /* ************************************************************************* *
       MQTT TOPICS
@@ -439,9 +452,14 @@ void onMqttMessage(char *topic, char *payload,
                             "Framerate should be 32,64,128,256,512 or 1024");
                     }
                 }
-                if (root.containsKey("mute")) {
-                    // feels more intuitive to send mute
-                    sendAudio = (root["mute"] == "on") ? false : true;
+                if (root.containsKey("mute_input")) {
+                    sendAudio = (root["mute_input"] == "true") ? true : false;
+                }
+                if (root.containsKey("mute_output")) {
+                    muteOverride = (root["mute_output"] == "true") ? true : false;
+                }
+                if (root.containsKey("amp_output")) {
+                    ampOutInterf =  (root["amp_output"] == "0") ? AMP_OUT_SPEAKERS : AMP_OUT_HEADPHONES;
                 }
                 if (root.containsKey("gain")) {
                     // feels more intuitive to send mute
@@ -708,6 +726,17 @@ void AudioPlayTask(void *p) {
                 }
             }
 
+            if(ampOutInterf != ampOutInterfLast) {
+                wb.SpiWrite(hal::kConfBaseAddress+11,(const uint8_t *)(&ampOutInterf), sizeof(uint16_t));
+                ampOutInterfLast = ampOutInterf;
+            }
+
+            //unmute output unless set to mute
+            uint16_t muteValue = 0;
+            if(muteOverride == false) {
+                wb.SpiWrite(hal::kConfBaseAddress+10,(const uint8_t *)(&muteValue), sizeof(uint16_t));
+            }
+
             while (played < message_size) {
                 int bytes_to_read = kMaxWriteLength;
                 if (message_size - played < kMaxWriteLength) {
@@ -734,6 +763,7 @@ void AudioPlayTask(void *p) {
                     }
                     MakeStereo(dataS, bytes_to_read);
                     if(Message.SampleRate < 44100) {
+/*
                         //Upsample to the caclulated rate, filling with 0
                         uint16_t dataU[sizeof(dataS) * upsample];
                         for (int i = 0; i < sizeof(dataS); i++) {
@@ -745,6 +775,7 @@ void AudioPlayTask(void *p) {
                             }
                         }
                         //Smooth the sample with interpolation
+*/
                     }
                     /*
                     if(Message.SampleRate == 16000) {
@@ -769,6 +800,10 @@ void AudioPlayTask(void *p) {
                                 finishedMsg.c_str());
             asyncClient.publish(debugTopic.c_str(), 0, false, "Done!");
             audioData.clear();
+
+            //Mute the output
+            muteValue = 1;
+            wb.SpiWrite(hal::kConfBaseAddress+10,(const uint8_t *)(&muteValue), sizeof(uint16_t));   
         }
         xEventGroupClearBits(audioGroup, PLAY);
         xSemaphoreGive(wbSemaphore);
@@ -847,6 +882,10 @@ void setup() {
     xEventGroupClearBits(audioGroup, STREAM);
     xEventGroupClearBits(everloopGroup, EVERLOOP);
     xEventGroupClearBits(everloopGroup, ANIMATE);
+
+    //Mute initial output
+    uint16_t muteValue = 1;
+    wb.SpiWrite(hal::kConfBaseAddress+10,(const uint8_t *)(&muteValue), sizeof(uint16_t));
 
     // Create task here so led turns red if WiFi does not connect
     xTaskCreatePinnedToCore(everloopTask, "everloopTask", 4096, NULL, 5,
