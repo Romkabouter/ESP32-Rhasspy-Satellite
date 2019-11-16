@@ -48,6 +48,8 @@
    v4.3:
     - Add muting of output and switching of output port
     - Reverted fix for 16000 wav messages, seems to cause trouble
+   v4.4:
+    - Fix distortion issues, caused by incorrect handling of incoming audio
  * ************************************************************************ */
 #include <WiFi.h>
 #include <ArduinoOTA.h>
@@ -316,7 +318,6 @@ void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
 // ---------------------------------------------------------------------------
 void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) {
   std::string topicstr(topic);
-  message_size = total;
   if (len + index == total) {
     //when len + index is total, we have reached the end of the message.
     //We can then do work on it
@@ -455,9 +456,17 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
     //len + index < total ==> partial message
     if (topicstr.find("playBytes") != std::string::npos) {
       if (index == 0) {
-        start = millis();
-        elapsed = millis();
-        audioData.clear();
+          //wait for previous audio to be finished
+          while (xEventGroupGetBits(audioGroup) == PLAY) {
+              delay(1);
+          }
+          start = millis();
+          elapsed = millis();
+          message_size = total;
+          audioData.clear();
+          char str[100];
+          sprintf(str, "Message size: %d", (int)message_size);
+          asyncClient.publish(debugTopic.c_str(), 0, false, str);
       }
       for (int i = 0; i < len; i++) {
         while (!audioData.push((uint8_t)payload[i])) {
