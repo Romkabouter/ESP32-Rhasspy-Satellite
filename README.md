@@ -14,8 +14,9 @@ Please raise an issue if some of the steps do not work or if they are unclear.
 - Dynamic brightness and colors for idle, hotword, updating and disconnected
 - Mute / unmute microphones via MQTT
 - Reboot device by sending hashed password
+- Resampling mono/stereo to 44100 stereo using Speex library (only platformIO)
 
-## Get started
+## Get started (PlatformIO, recommended)
 
 To get the code running I suggest you first reset the Voice if you have flashed it previously
 
@@ -23,8 +24,10 @@ To get the code running I suggest you first reset the Voice if you have flashed 
 - ssh into the pi, execute this command: voice_esp32_enable. If you get a permission denied, execute the command again. 
 - esptool.py --chip esp32 --port /dev/ttyS0 --baud 115200 --before default_reset --after hard_reset erase_flash
 - Reboot the Pi.
+- Follow this guide on HackterIO to get started: https://www.hackster.io/matrix-labs/program-matrix-voice-esp32-with-vs-code-using-platformio-3dd498
+- After that you can use OTA, the platformIO is more stable then the Arduino version
 
-## OTA (Over the Air) Update version
+## Ardiuno (depricated)
 
 In the folder "MatrixVoiceAudioServer", there are two bin files:
 - bootloader.bin
@@ -73,19 +76,18 @@ The message can contain 4 keys:
 
 Example: {"brightness":20,"idle":[240,210,17,0],"hotword":[173,17,240,0],"update":[0,255,255,0]}
 
-You can restart the Voice by publishing {"passwordhash":"yourpasswordhash"} to the topic SITEID/restart 
-You can mute/unmute the microphones by publishing {"mute":"on"} or {"mute":"off"} to the topic SITEID/audio
-Can can also change the framesize by sending commands to SITEID/audio
+Restart the device by publishing {"passwordhash":"yourpasswordhash"} to the topic SITEID/restart 
+Mute/unmute the microphones by publishing {"mute_input":"true"} or {"mute_input":"false"} to the topic SITEID/audio
+Mute/unmute playback by publishing {"mute_output":"true"} or {"mute_output":"false"} to the topic SITEID/audio
+Change the amp to jack/speaker by publishing {"amp_output":0} or {"amp_output":1} to the topic SITEID/audio
+Adjust mic gain publishing {"gain":5} to the topic SITEID/audio
+You can also change the framesize by sending commands to SITEID/audio
 
 ## Roadmap
 
 These features I want to implement in the future, not ordered in any way
-- Support other sample rate for incoming messages
-- Indication of the streaming status, or more likely an indication if the audio output was halted.
 - led animations
 - 3D case including small speakers.
 
 ## Known issues
 - Uploading a sketch sometimes fails or an error is thrown when the uploading is done. If you get the error, check if your new sketch has been implemented or start over.
-- Audio output is sometimes distorted
-- Mono is not always detected, leading to audio playing to fast.
