@@ -216,6 +216,37 @@ std::string debugTopic = SITEID + std::string("/debug");
 std::string audioTopic = SITEID + std::string("/audio");
 std::string restartTopic = SITEID + std::string("/restart");
 
+std::vector<std::string> explode( const std::string &delimiter, const std::string &str)
+{
+    std::vector<std::string> arr;
+ 
+    int strleng = str.length();
+    int delleng = delimiter.length();
+    if (delleng==0)
+        return arr;//no change
+ 
+    int i=0;
+    int k=0;
+    while( i<strleng )
+    {
+        int j=0;
+        while (i+j<strleng && j<delleng && str[i+j]==delimiter[j])
+            j++;
+        if (j==delleng)//found delimiter
+        {
+            arr.push_back(  str.substr(k, i-k) );
+            i+=delleng;
+            k=i;
+        }
+        else
+        {
+            i++;
+        }
+    }
+    arr.push_back(  str.substr(k, i-k) );
+    return arr;
+}
+
 /* ************************************************************************* *
       HELPER CLASS FOR WAVE HEADER, taken from https://www.xtronical.com/
       Changed to fit my needs
@@ -371,18 +402,19 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
             char str[100];
             sprintf(str, "Received in %d ms", (int)elapsed);
             publishDebug(str);
+            std::vector<std::string> topicparts = explode("/", topicstr);
             if (topicstr.find("playBytesStreaming") != std::string::npos) {
                 streamingBytes = true;
                 // Get the ID from the topic
-                finishedMsg = "{\"id\":\"" + topicstr.substr(19 + strlen(SITEID) + 20, 36) + "\",\"siteId\":\"" + SITEID + "\"}";
+                finishedMsg = "{\"id\":\"" + topicparts[4] + "\",\"siteId\":\"" + SITEID + "\"}";
                 if (topicstr.substr(strlen(topicstr.c_str())-3, 3) == "0/0") {
                     endStream = false;
                 } else if (topicstr.substr(strlen(topicstr.c_str())-2, 2) == "/1") {
                     endStream = true;
                 }
             } else {
-                // Get the ID from the topic
-                finishedMsg = "{\"id\":\"" + topicstr.substr(19 + strlen(SITEID) + 11, 37) + "\",\"siteId\":\"" + SITEID + "\",\"sessionId\":null}";
+                // Get the ID from the topic               
+                finishedMsg = "{\"id\":\"" + topicparts[4] + "\",\"siteId\":\"" + SITEID + "\",\"sessionId\":null}";
                 streamingBytes = false;
             }
             for (int i = 0; i < len; i++) {
@@ -394,6 +426,11 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
                     xEventGroupClearBits(audioGroup, STREAM);
                     xEventGroupSetBits(audioGroup, PLAY);
                 }
+            }
+            //make sure audio starts playing even if the ringbuffer is not full
+            if (xEventGroupGetBits(audioGroup) != PLAY) {
+                xEventGroupClearBits(audioGroup, STREAM);
+                xEventGroupSetBits(audioGroup, PLAY);
             }
         } else if (topicstr.find(everloopTopic.c_str()) != std::string::npos) {
             std::string payloadstr(payload);
@@ -718,7 +755,7 @@ void AudioPlayTask(void *p) {
         xEventGroupClearBits(audioGroup, STREAM);
         if (xSemaphoreTake(wbSemaphore, (TickType_t)5000) == pdTRUE) {
             Serial.println("Play Audio");
-            publishDebug("Play files");
+            publishDebug("Play Audio");
             char str[100];
             const int kMaxWriteLength = 1024;
             float sleep = 1000000 / (16 / 8 * 44100 * 2 / (kMaxWriteLength / 2));  // 2902,494331065759637
@@ -768,11 +805,11 @@ void AudioPlayTask(void *p) {
                     vTaskDelay(1);
                     now = millis();
                     if (now - lastBytesPlayed > 500) {
+                        sprintf(str, "Exit timeout, audioData.size : %d, bytes_to_read: %d, played: %d, message_size: %d",(int)audioData.size(), (int)bytes_to_read, (int)played, (int)message_size);
+                        publishDebug(str);
                         //force exit
                         played = message_size;
                         audioData.clear();
-                        endStream = true;
-                        publishDebug("Exit timeout");
                     }
                 }
 
