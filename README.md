@@ -2,6 +2,7 @@
 
 The Audio Steamer is designed to work as an Snips Audio Server, see https://snips.ai/ and also support Rhasppy (https://rhasspy.readthedocs.io/en/latest/)
 Please raise an issue if some of the steps do not work or if they are unclear.
+The Arduino code is no longer maintained and will not be futher developed, I found platformIO the better choise.
 
 ## Features
 

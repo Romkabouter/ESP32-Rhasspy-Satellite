@@ -93,6 +93,7 @@ extern "C" {
 #define CHANNELS 1
 #define DATA_CHUNK_ID 0x61746164
 #define FMT_CHUNK_ID 0x20746d66
+#define DEBUG 1
 
 // These parameters enable you to select the default value for output
 enum {
@@ -165,6 +166,8 @@ bool audioOK = true;
 bool wifi_connected = false;
 bool hotword_detected = false;
 bool isUpdateInProgess = false;
+bool streamingBytes = false;
+bool endStream = false;
 std::string finishedMsg = "";
 int message_count;
 int CHUNK = 256;  // set to multiplications of 256, voice return a set of 256
@@ -202,7 +205,9 @@ bool muteOverride = false;
 // Dynamic topics for MQTT
 std::string audioFrameTopic = std::string("hermes/audioServer/") + SITEID + std::string("/audioFrame");
 std::string playFinishedTopic = std::string("hermes/audioServer/") + SITEID + std::string("/playFinished");
+std::string streamFinishedTopic = std::string("hermes/audioServer/") + SITEID + std::string("/streamFinished");
 std::string playBytesTopic = std::string("hermes/audioServer/") + SITEID + std::string("/playBytes/#");
+std::string playBytesStreamingTopic = std::string("hermes/audioServer/") + SITEID + std::string("/playBytesStreaming/#");
 std::string rhasspyWakeTopic = std::string("rhasspy/+/transition/+");
 std::string toggleOffTopic = "hermes/hotword/toggleOff";
 std::string toggleOnTopic = "hermes/hotword/toggleOn";
@@ -247,6 +252,12 @@ XT_Wav_Class::XT_Wav_Class(const unsigned char *WavData) {
 /* ************************************************************************* *
       NETWORK FUNCTIONS AND MQTT
  * ************************************************************************ */
+void publishDebug(const char* message) {
+    if (DEBUG) {
+        asyncClient.publish(debugTopic.c_str(), 0, false, message);
+    }
+}
+
 void connectToWifi() {
     Serial.println("Connecting to Wi-Fi...");
     WiFi.begin(WIFI_SSID, WIFI_PASS);
@@ -262,11 +273,12 @@ bool connectAudio() {
     if (audioServer.connect("MatrixVoiceAudio", MQTT_USER, MQTT_PASS)) {
         Serial.println("Connected to synch MQTT!");
         if (asyncClient.connected()) {
-            asyncClient.publish(debugTopic.c_str(), 0, false, "Connected to synch MQTT!");
+            publishDebug("Connected to synch MQTT!");
         }
     }
     return audioServer.connected();
 }
+
 
 // ---------------------------------------------------------------------------
 // WIFI event
@@ -296,14 +308,14 @@ void WiFiEvent(WiFiEvent_t event) {
 void onMqttConnect(bool sessionPresent) {
     Serial.println("Connected to MQTT.");
     asyncClient.subscribe(playBytesTopic.c_str(), 0);
+    asyncClient.subscribe(playBytesStreamingTopic.c_str(), 0);
     asyncClient.subscribe(toggleOffTopic.c_str(), 0);
     asyncClient.subscribe(toggleOnTopic.c_str(), 0);
     asyncClient.subscribe(rhasspyWakeTopic.c_str(), 0);
     asyncClient.subscribe(everloopTopic.c_str(), 0);
     asyncClient.subscribe(restartTopic.c_str(), 0);
     asyncClient.subscribe(audioTopic.c_str(), 0);
-    asyncClient.subscribe(debugTopic.c_str(), 0);
-    asyncClient.publish(debugTopic.c_str(), 0, false, "Connected to asynch MQTT!");
+    publishDebug("Connected to asynch MQTT!");
     // xEventGroupClearBits(everloopGroup, ANIMATE);
 }
 
@@ -354,13 +366,25 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
                 hotword_detected = false;
                 xEventGroupSetBits(everloopGroup,EVERLOOP);  // Set the bit so the everloop gets updated
             }
-        } else if (topicstr.find("playBytes") != std::string::npos) {
+        } else if (topicstr.find("playBytes") != std::string::npos || topicstr.find("playBytesStreaming") != std::string::npos) {
             elapsed = millis() - start;
             char str[100];
             sprintf(str, "Received in %d ms", (int)elapsed);
-            asyncClient.publish(debugTopic.c_str(), 0, false, str);
-            // Get the ID from the topic
-            finishedMsg = "{\"id\":\"" + topicstr.substr(19 + strlen(SITEID) + 11, 37) + "\",\"siteId\":\"" + SITEID + "\",\"sessionId\":null}";
+            publishDebug(str);
+            if (topicstr.find("playBytesStreaming") != std::string::npos) {
+                streamingBytes = true;
+                // Get the ID from the topic
+                finishedMsg = "{\"id\":\"" + topicstr.substr(19 + strlen(SITEID) + 20, 36) + "\",\"siteId\":\"" + SITEID + "\"}";
+                if (topicstr.substr(strlen(topicstr.c_str())-3, 3) == "0/0") {
+                    endStream = false;
+                } else if (topicstr.substr(strlen(topicstr.c_str())-2, 2) == "/1") {
+                    endStream = true;
+                }
+            } else {
+                // Get the ID from the topic
+                finishedMsg = "{\"id\":\"" + topicstr.substr(19 + strlen(SITEID) + 11, 37) + "\",\"siteId\":\"" + SITEID + "\",\"sessionId\":null}";
+                streamingBytes = false;
+            }
             for (int i = 0; i < len; i++) {
                 while (!audioData.push((uint8_t)payload[i])) {
                     delay(1);
@@ -407,7 +431,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
                 }
                 xEventGroupSetBits(everloopGroup, EVERLOOP);
             } else {
-                asyncClient.publish(debugTopic.c_str(), 0, false, err.c_str());
+                publishDebug(err.c_str());
             }
         } else if (topicstr.find(audioTopic.c_str()) != std::string::npos) {
             std::string payloadstr(payload);
@@ -428,7 +452,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
                         }
                     }
                     if (!found) {
-                        asyncClient.publish(debugTopic.c_str(), 0, false, "Framerate should be 32,64,128,256,512 or 1024");
+                        publishDebug("Framerate should be 32,64,128,256,512 or 1024");
                     }
                 }
                 if (root.containsKey("mute_input")) {
@@ -444,7 +468,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
                     mics.SetGain((int)root["gain"]);
                 }
             } else {
-                asyncClient.publish(debugTopic.c_str(), 0, false, err.c_str());
+                publishDebug(err.c_str());
             }
         } else if (topicstr.find(restartTopic.c_str()) != std::string::npos) {
             std::string payloadstr(payload);
@@ -458,12 +482,12 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
                     }
                 }
             } else {
-                asyncClient.publish(debugTopic.c_str(), 0, false, err.c_str());
+                publishDebug(err.c_str());
             }
         }
     } else {
         // len + index < total ==> partial message
-        if (topicstr.find("playBytes") != std::string::npos) {
+        if (topicstr.find("playBytes") != std::string::npos || topicstr.find("playBytesStreaming") != std::string::npos) {
             if (index == 0) {
                 //wait for previous audio to be finished
                 while (xEventGroupGetBits(audioGroup) == PLAY) {
@@ -475,7 +499,11 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
                 audioData.clear();
                 char str[100];
                 sprintf(str, "Message size: %d", (int)message_size);
-                asyncClient.publish(debugTopic.c_str(), 0, false, str);
+                publishDebug(str);
+                if (topicstr.find("playBytesStreaming") != std::string::npos) {
+                    endStream = false;
+                    streamingBytes = true;
+                }
             }
             for (int i = 0; i < len; i++) {
                 while (!audioData.push((uint8_t)payload[i])) {
@@ -690,7 +718,7 @@ void AudioPlayTask(void *p) {
         xEventGroupClearBits(audioGroup, STREAM);
         if (xSemaphoreTake(wbSemaphore, (TickType_t)5000) == pdTRUE) {
             Serial.println("Play Audio");
-            asyncClient.publish(debugTopic.c_str(), 0, false, "Play files");
+            publishDebug("Play files");
             char str[100];
             const int kMaxWriteLength = 1024;
             float sleep = 1000000 / (16 / 8 * 44100 * 2 / (kMaxWriteLength / 2));  // 2902,494331065759637
@@ -708,7 +736,7 @@ void AudioPlayTask(void *p) {
 
             //Post some stats!
             sprintf(str, "Samplerate: %d, Channels: %d, Format: %04X, Bits per Sample: %04X", (int)Message.SampleRate, (int)Message.NumChannels, (int)Message.Format, (int)Message.BitsPerSample);
-            asyncClient.publish(debugTopic.c_str(), 0, false, str);
+            publishDebug(str);
 
             //Output amp changed, write that to the config
             if(ampOutInterf != ampOutInterfLast) {
@@ -743,7 +771,8 @@ void AudioPlayTask(void *p) {
                         //force exit
                         played = message_size;
                         audioData.clear();
-                        asyncClient.publish(debugTopic.c_str(), 0, false, "Exit timeout");
+                        endStream = true;
+                        publishDebug("Exit timeout");
                     }
                 }
 
@@ -804,8 +833,14 @@ void AudioPlayTask(void *p) {
             }
 
             //Publish the finshed message
-            asyncClient.publish(playFinishedTopic.c_str(), 0, false, finishedMsg.c_str());
-            asyncClient.publish(debugTopic.c_str(), 0, false, "Done!");
+            if (streamingBytes) {
+                if (endStream) {
+                    asyncClient.publish(streamFinishedTopic.c_str(), 0, false, finishedMsg.c_str());
+                }
+            } else {
+                asyncClient.publish(playFinishedTopic.c_str(), 0, false, finishedMsg.c_str());
+            }
+            publishDebug("Done!");
             //fix on led showing issue with audio
             streamMessageCount = 500;
             audioOK = true;
@@ -1002,13 +1037,13 @@ void loop() {
         if (stackMaxTmp > stackMaxAudioPlay) {
             stackMaxAudioPlay = stackMaxTmp;
             sprintf(str,"Max stacksize AudioPlay: %d",(int)stackMaxAudioPlay);
-            asyncClient.publish(debugTopic.c_str(), 0, false, str);
+            publishDebug(str);
         }
         stackMaxTmp = audioStreamStack - uxTaskGetStackHighWaterMark(audioPlayHandle);
         if (stackMaxTmp > stackMaxAudioStream) {
             stackMaxAudioStream = stackMaxTmp;
             sprintf(str,"Max stacksize AudioStream: %d",(int)stackMaxAudioStream);
-            asyncClient.publish(debugTopic.c_str(), 0, false, str);
+            publishDebug(str);
         }
     }
     delay(1);
