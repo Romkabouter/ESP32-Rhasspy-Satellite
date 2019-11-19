@@ -53,6 +53,8 @@
     - Fix distortion issues, caused by incorrect handling of incoming audio
     - Added resampling using Speex, resamples 8000 and up and converts mono 
       to stereo. 
+   v4.5:
+    - Support streaming audio
 * ************************************************************************ */
 
 #include <Arduino.h>
