@@ -55,6 +55,8 @@
       to stereo. 
    v4.5:
     - Support streaming audio
+   v4.5.1:
+    - Fix distortion on lower samplerates
 * ************************************************************************ */
 
 #include <Arduino.h>
@@ -843,9 +845,9 @@ void AudioPlayTask(void *p) {
                     spx_uint32_t in_len;
                     spx_uint32_t out_len;
                     in_len = bytes_to_read / sizeof(int16_t);
-                    out_len = bytes_to_read * (ceil(44100 / Message.SampleRate) + 1);
+                    out_len = bytes_to_read * (float)(44100 / Message.SampleRate);
                     int16_t output[out_len];
-                    int16_t input[bytes_to_read / sizeof(int16_t)];
+                    int16_t input[in_len];
                     //Convert 8 bit to 16 bit
                     for (int i = 0; i < bytes_to_read; i += 2) {
                         input[i/2] = ((data[i] & 0xff) | (data[i + 1] << 8));
