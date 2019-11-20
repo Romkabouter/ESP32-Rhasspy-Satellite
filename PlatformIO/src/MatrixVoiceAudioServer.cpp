@@ -97,7 +97,6 @@ extern "C" {
 #define CHANNELS 1
 #define DATA_CHUNK_ID 0x61746164
 #define FMT_CHUNK_ID 0x20746d66
-#define DEBUG 1
 
 // These parameters enable you to select the default value for output
 enum {
@@ -172,6 +171,7 @@ bool hotword_detected = false;
 bool isUpdateInProgess = false;
 bool streamingBytes = false;
 bool endStream = false;
+bool DEBUG = false;
 std::string finishedMsg = "";
 int message_count;
 int CHUNK = 256;  // set to multiplications of 256, voice return a set of 256
@@ -350,6 +350,7 @@ void onMqttConnect(bool sessionPresent) {
     asyncClient.subscribe(everloopTopic.c_str(), 0);
     asyncClient.subscribe(restartTopic.c_str(), 0);
     asyncClient.subscribe(audioTopic.c_str(), 0);
+    asyncClient.subscribe(debugTopic.c_str(), 0);
     publishDebug("Connected to asynch MQTT!");
     // xEventGroupClearBits(everloopGroup, ANIMATE);
 }
@@ -524,6 +525,16 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
                 }
             } else {
                 publishDebug(err.c_str());
+            }
+        } else if (topicstr.find(debugTopic.c_str()) != std::string::npos) {
+            std::string payloadstr(payload);
+            StaticJsonDocument<300> doc;
+            DeserializationError err = deserializeJson(doc, payloadstr.c_str());
+            if (!err) {
+                JsonObject root = doc.as<JsonObject>();
+                if (root.containsKey("debug")) {
+                    DEBUG = (root["debug"] == "true") ? true : false;
+                }
             }
         }
     } else {
