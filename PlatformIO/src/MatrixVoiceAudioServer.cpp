@@ -7,8 +7,8 @@
    See https://snips.ai/ or https://rhasspy.readthedocs.io/en/latest/ for more information
 
    Author:  Paul Romkes
-   Date:    September 2018
-   Version: 4.3
+   Date:    November 2019
+   Version: 4.5.1
 
    Changelog:
    ==========
@@ -81,10 +81,10 @@
 #include "wishbone_bus.h"
 
 extern "C" {
-#include "freertos/FreeRTOS.h"
-#include "freertos/event_groups.h"
-#include "freertos/timers.h"
-#include "speex_resampler.h"
+    #include "freertos/FreeRTOS.h"
+    #include "freertos/event_groups.h"
+    #include "freertos/timers.h"
+    #include "speex_resampler.h"
 }
 
 // User configuration in platformio.ini
