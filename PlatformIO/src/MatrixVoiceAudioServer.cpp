@@ -87,8 +87,6 @@ extern "C" {
     #include "speex_resampler.h"
 }
 
-// User configuration in platformio.ini
-
 /* ************************************************************************* *
       DEFINES AND GLOBALS
  * ************************************************************************ */
@@ -591,7 +589,7 @@ void Audiostream(void *p) {
                 uint8_t voicemapped[CHUNK * WIDTH];
                 uint8_t payload[sizeof(header) + (CHUNK * WIDTH)];
 
-                // Message count is the Mattix NumberOfSamples divided by the
+                // Message count is the Matrix NumberOfSamples divided by the
                 // framerate of Snips. This defaults to 512 / 256 = 2. If you
                 // lower the framerate, the AudioServer has to send more
                 // wavefile because the NumOfSamples is a fixed number
@@ -918,6 +916,9 @@ void AudioPlayTask(void *p) {
       SETUP
  * ************************************************************************ */
 void setup() {
+    Serial.begin(115200);
+    Serial.println("Booting");
+
     // Implementation of Semaphore, otherwise the ESP will crash due to read of
     // the mics
     if (wbSemaphore == NULL)  // Not yet been created?
@@ -986,8 +987,6 @@ void setup() {
     xTaskCreatePinnedToCore(everloopTask, "everloopTask", 4096, NULL, 5, &everloopTaskHandle, 1);
     xEventGroupSetBits(everloopGroup, EVERLOOP);
 
-    Serial.begin(115200);
-    Serial.println("Booting");
     WiFi.mode(WIFI_STA);
     WiFi.begin(WIFI_SSID, WIFI_PASS);
     while (WiFi.waitForConnectResult() != WL_CONNECTED) {
