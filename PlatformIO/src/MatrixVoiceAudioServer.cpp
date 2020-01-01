@@ -57,6 +57,8 @@
     - Support streaming audio
    v4.5.1:
     - Fix distortion on lower samplerates
+   v5.0:
+    - Added ondevice wakeword detection using WakeNet, only Alexa available
 * ************************************************************************ */
 
 #include <Arduino.h>
