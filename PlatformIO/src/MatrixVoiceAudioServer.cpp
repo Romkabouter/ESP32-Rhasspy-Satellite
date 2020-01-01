@@ -85,7 +85,13 @@ extern "C" {
     #include "freertos/event_groups.h"
     #include "freertos/timers.h"
     #include "speex_resampler.h"
+    #include "esp_wn_iface.h"
 }
+
+extern const esp_wn_iface_t esp_sr_wakenet3_quantized;
+extern const model_coeff_getter_t get_coeff_wakeNet3_model_float;
+#define WAKENET_COEFF get_coeff_wakeNet3_model_float
+#define WAKENET_MODEL esp_sr_wakenet3_quantized
 
 /* ************************************************************************* *
       DEFINES AND GLOBALS
@@ -95,6 +101,9 @@ extern "C" {
 #define CHANNELS 1
 #define DATA_CHUNK_ID 0x61746164
 #define FMT_CHUNK_ID 0x20746d66
+
+static const esp_wn_iface_t *wakenet = &WAKENET_MODEL;
+static const model_coeff_getter_t *model_coeff_getter = &WAKENET_COEFF;
 
 // These parameters enable you to select the default value for output
 enum {
@@ -169,8 +178,10 @@ bool hotword_detected = false;
 bool isUpdateInProgess = false;
 bool streamingBytes = false;
 bool endStream = false;
+bool localHotwordDetection = false;
 bool DEBUG = false;
 std::string finishedMsg = "";
+std::string detectMsg = "";
 int message_count;
 int CHUNK = 256;  // set to multiplications of 256, voice return a set of 256
 int chunkValues[] = {32, 64, 128, 256, 512, 1024};
@@ -213,6 +224,7 @@ std::string playBytesStreamingTopic = std::string("hermes/audioServer/") + SITEI
 std::string rhasspyWakeTopic = std::string("rhasspy/+/transition/+");
 std::string toggleOffTopic = "hermes/hotword/toggleOff";
 std::string toggleOnTopic = "hermes/hotword/toggleOn";
+std::string hotwordDetectedTopic = "hermes/hotword/default/detected";
 std::string everloopTopic = SITEID + std::string("/everloop");
 std::string debugTopic = SITEID + std::string("/debug");
 std::string audioTopic = SITEID + std::string("/audio");
@@ -507,6 +519,9 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
                 if (root.containsKey("gain")) {
                     mics.SetGain((int)root["gain"]);
                 }
+                if (root.containsKey("hotword")) {
+                    localHotwordDetection = (root["hotword"] == "local") ? true : false;
+                }
             } else {
                 publishDebug(err.c_str());
             }
@@ -573,6 +588,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
       AUDIOSTREAM TASK, USES SYNCED MQTT CLIENT
  * ************************************************************************ */
 void Audiostream(void *p) {
+    model_iface_data_t *model_data = wakenet->create(model_coeff_getter, DET_MODE_90);
     while (1) {
         // Wait for the bit before updating. Do not clear in the wait exit; (first false)
         xEventGroupWaitBits(audioGroup, STREAM, false, false, portMAX_DELAY);
@@ -589,24 +605,46 @@ void Audiostream(void *p) {
                 uint8_t voicemapped[CHUNK * WIDTH];
                 uint8_t payload[sizeof(header) + (CHUNK * WIDTH)];
 
-                // Message count is the Matrix NumberOfSamples divided by the
-                // framerate of Snips. This defaults to 512 / 256 = 2. If you
-                // lower the framerate, the AudioServer has to send more
-                // wavefile because the NumOfSamples is a fixed number
-                for (int i = 0; i < message_count; i++) {
-                    for (uint32_t s = CHUNK * i; s < CHUNK * (i + 1); s++) {
-                        voicebuffer[s - (CHUNK * i)] = mics.Beam(s);
-                    }
-                    // voicebuffer will hold 256 samples of 2 bytes, but we need
-                    // it as 1 byte We do a memcpy, because I need to add the
-                    // wave header as well
-                    memcpy(voicemapped, voicebuffer, CHUNK * WIDTH);
+                if (!hotword_detected && localHotwordDetection) {
 
-                    // Add the wave header
-                    memcpy(payload, &header, sizeof(header));
-                    memcpy(&payload[sizeof(header)], voicemapped,sizeof(voicemapped));
-                    audioServer.publish(audioFrameTopic.c_str(),(uint8_t *)payload, sizeof(payload));
-                    streamMessageCount++;
+                    int16_t voicebuffer_wk[CHUNK * WIDTH];
+                    for (uint32_t s = 0; s < CHUNK * WIDTH; s++) {
+                        voicebuffer_wk[s] = mics.Beam(s);
+                    }
+                    
+                    int r = wakenet->detect(model_data, voicebuffer_wk);
+                    if (r > 0) {
+                        detectMsg =  std::string("{\"siteId\":\"") + SITEID + std::string("\"}");
+                        asyncClient.publish(hotwordDetectedTopic.c_str(), 0, false, detectMsg.c_str());
+                        hotword_detected = true;
+                        publishDebug("Hotword Detected");
+                    }
+                    //simulate message for leds
+                    for (int i = 0; i < message_count; i++) {
+                        streamMessageCount++;
+                    }
+                }
+
+                if (hotword_detected || !localHotwordDetection) {
+                    // Message count is the Matrix NumberOfSamples divided by the
+                    // framerate of Snips. This defaults to 512 / 256 = 2. If you
+                    // lower the framerate, the AudioServer has to send more
+                    // wavefile because the NumOfSamples is a fixed number
+                    for (int i = 0; i < message_count; i++) {
+                        for (uint32_t s = CHUNK * i; s < CHUNK * (i + 1); s++) {
+                            voicebuffer[s - (CHUNK * i)] = mics.Beam(s);
+                        }
+                        // voicebuffer will hold 256 samples of 2 bytes, but we need
+                        // it as 1 byte We do a memcpy, because I need to add the
+                        // wave header as well
+                        memcpy(voicemapped, voicebuffer, CHUNK * WIDTH);
+
+                        // Add the wave header
+                        memcpy(payload, &header, sizeof(header));
+                        memcpy(&payload[sizeof(header)], voicemapped,sizeof(voicemapped));
+                        audioServer.publish(audioFrameTopic.c_str(),(uint8_t *)payload, sizeof(payload));
+                        streamMessageCount++;
+                    }
                 }
             }
             xSemaphoreGive(wbSemaphore);  // Now free or "Give" the Serial Port for others.
