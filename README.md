@@ -16,6 +16,7 @@ The Arduino code is no longer maintained and will not be futher developed, I fou
 - Mute / unmute microphones via MQTT
 - Reboot device by sending hashed password
 - Resampling mono/stereo to 44100 stereo using Speex library (only platformIO)
+- On Device Wakeword using WakeNet. https://github.com/espressif/esp-sr/blob/master/wake_word_engine/README.md. Default off
 
 ## Get started (PlatformIO, recommended)
 
@@ -84,6 +85,8 @@ Change the amp to jack/speaker by publishing {"amp_output":0} or {"amp_output":1
 Adjust mic gain publishing {"gain":5} to the topic SITEID/audio
 You can also change the framesize by sending commands to SITEID/audio
 
+By default, the on device WakeNet detection is off, this can be activated by sending an MQTT message to SITEID/audio with payload {"hotword":"local"} or {"hotword":"remote"}
+
 ## Roadmap
 
 These features I want to implement in the future, not ordered in any way
@@ -91,4 +94,5 @@ These features I want to implement in the future, not ordered in any way
 - 3D case including small speakers.
 
 ## Known issues
-- Uploading a sketch sometimes fails or an error is thrown when the uploading is done. If you get the error, check if your new sketch has been implemented or start over.
+- Uploading sometimes fails or an error is thrown when the uploading is done. 
+- On device hotword detection seems a bit slow and also the OTA seems to be impacted.
