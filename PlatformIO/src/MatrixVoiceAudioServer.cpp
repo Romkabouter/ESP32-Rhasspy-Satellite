@@ -616,7 +616,7 @@ void Audiostream(void *p) {
                     
                     int r = wakenet->detect(model_data, voicebuffer_wk);
                     if (r > 0) {
-                        detectMsg =  std::string("{\"siteId\":\"") + SITEID + std::string("\"}");
+                        detectMsg =  std::string("{\"siteId\":\"") + SITEID + std::string("\", \"modelId\":\"") + MODELID + std::string("\"}");
                         asyncClient.publish(hotwordDetectedTopic.c_str(), 0, false, detectMsg.c_str());
                         hotword_detected = true;
                         publishDebug("Hotword Detected");

@@ -4,6 +4,7 @@
 #define MQTT_PASS "MQTTPassword"
 
 #define SITEID "matrixvoice"
+#define MODELID "alexa"
 //Change to your own IP
 #define MQTT_IP IPAddress(192, 168, 43, 54)
 #define MQTT_HOST "192.168.43.54"
