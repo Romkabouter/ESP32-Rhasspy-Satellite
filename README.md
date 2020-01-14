@@ -26,7 +26,7 @@ To get the code running I suggest you first reset the Voice if you have flashed 
 - ssh into the pi, execute this command: voice_esp32_enable. If you get a permission denied, execute the command again. 
 - esptool.py --chip esp32 --port /dev/ttyS0 --baud 115200 --before default_reset --after hard_reset erase_flash
 - Reboot the Pi.
-- Follow this guide on HackterIO to get started: https://www.hackster.io/matrix-labs/program-matrix-voice-esp32-with-vs-code-using-platformio-3dd498
+- Follow this guide on HackterIO to get started: https://www.hackster.io/matrix-labs/program-matrix-voice-esp32-with-vs-code-using-platformio-3dd498, but in step 2 use "https://github.com/Romkabouter/Matrix-Voice-ESP32-MQTT-Audio-Streamer.git" and not the esp32-platformio repository. Also, the platform.ui file can be found in the PlatformIO subfolder, make the changes from step 3 in that file.
 - After that you can use OTA, the platformIO is more stable then the Arduino version
 
 ## Ardiuno (depricated)
