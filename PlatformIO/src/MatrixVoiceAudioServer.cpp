@@ -215,7 +215,6 @@ const uint8_t PROGMEM gamma8[] = {
     255};
 uint16_t ampOutInterfLast = 2;
 uint16_t outputVolume = 100;
-uint16_t minimumVolume = 25;
 bool muteOverride = false;
 
 /* ************************************************************************* *
