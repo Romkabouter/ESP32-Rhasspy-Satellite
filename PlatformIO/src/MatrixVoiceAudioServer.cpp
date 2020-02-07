@@ -59,6 +59,8 @@
     - Fix distortion on lower samplerates
    v5.0:
     - Added ondevice wakeword detection using WakeNet, only Alexa available
+   v5.1:
+    - Added volume control, publish {"volume": 50} to the sitesid/audio topic
 * ************************************************************************ */
 
 #include <Arduino.h>
@@ -212,6 +214,8 @@ const uint8_t PROGMEM gamma8[] = {
     215, 218, 220, 223, 225, 228, 231, 233, 236, 239, 241, 244, 247, 249, 252,
     255};
 uint16_t ampOutInterfLast = 2;
+uint16_t outputVolume = 100;
+uint16_t minimumVolume = 25;
 bool muteOverride = false;
 
 /* ************************************************************************* *
@@ -520,6 +524,13 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
                 }
                 if (root.containsKey("gain")) {
                     mics.SetGain((int)root["gain"]);
+                }
+                if (root.containsKey("volume")) {
+                    uint16_t wantedVolume = (uint16_t)root["volume"];                    
+                    if (wantedVolume <= 100) {
+                        outputVolume = (100 - wantedVolume) * 25 / 100; //25 is minimum volume
+                        wb.SpiWrite(hal::kConfBaseAddress+8,(const uint8_t *)(&outputVolume), sizeof(uint16_t));
+                   }
                 }
                 if (root.containsKey("hotword")) {
                     localHotwordDetection = (root["hotword"] == "local") ? true : false;
