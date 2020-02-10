@@ -78,14 +78,16 @@ The message can contain 4 keys:
 
 Example: {"brightness":20,"idle":[240,210,17,0],"hotword":[173,17,240,0],"update":[0,255,255,0]}
 
-Restart the device by publishing {"passwordhash":"yourpasswordhash"} to the topic SITEID/restart 
-Mute/unmute the microphones by publishing {"mute_input":"true"} or {"mute_input":"false"} to the topic SITEID/audio
-Mute/unmute playback by publishing {"mute_output":"true"} or {"mute_output":"false"} to the topic SITEID/audio
-Change the amp to jack/speaker by publishing {"amp_output":0} or {"amp_output":1} to the topic SITEID/audio
-Adjust mic gain publishing {"gain":5} to the topic SITEID/audio
-You can also change the framesize by sending commands to SITEID/audio
+The topic SITEID/audio also can receive multiple commands:
+* Mute/unmute microphones: publish {"mute_input":"true"} or {"mute_input":"false"}
+* Mute/unmute playback: publishing {"mute_output":"true"} or {"mute_output":"false"}
+* Change the amp to jack/speaker: publish {"amp_output":"0"} or {"amp_output":"1"}
+* Adjust mic gain: publish {"gain":5}
+* Change the framesize: publish {"framerate":256}, Limited to 32,64,128,256,512 or 1024.
+* Switch local/remote hotword detection: publish {"hotword":"local"} or {"hotword":"remote"}, Local only supports "Alexa"
+* Adjust volume: publish {"volume": 50}
 
-By default, the on device WakeNet detection is off, this can be activated by sending an MQTT message to SITEID/audio with payload {"hotword":"local"} or {"hotword":"remote"}
+Restart the device by publishing {"passwordhash":"yourpasswordhash"} to SITEID/restart 
 
 ## Roadmap
 
