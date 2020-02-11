@@ -336,6 +336,9 @@ bool connectAudio() {
 // ---------------------------------------------------------------------------
 void WiFiEvent(WiFiEvent_t event) {
     switch (event) {
+        case SYSTEM_EVENT_STA_START:
+            WiFi.setHostname(HOSTNAME);
+            break;
         case SYSTEM_EVENT_STA_GOT_IP:
             wifi_connected = true;
             xEventGroupSetBits(everloopGroup,EVERLOOP);  // Set the bit so the everloop gets updated
@@ -988,7 +991,7 @@ void setup() {
     asyncClient.onMessage(onMqttMessage);
     asyncClient.setServer(MQTT_IP, MQTT_PORT);
     asyncClient.setCredentials(MQTT_USER, MQTT_PASS);
-    audioServer.setServer(MQTT_IP, 1883);
+    audioServer.setServer(MQTT_IP, MQTT_PORT);
 
     everloopGroup = xEventGroupCreate();
     audioGroup = xEventGroupCreate();
