@@ -213,7 +213,6 @@ const uint8_t PROGMEM gamma8[] = {
     180, 182, 184, 186, 189, 191, 193, 196, 198, 200, 203, 205, 208, 210, 213,
     215, 218, 220, 223, 225, 228, 231, 233, 236, 239, 241, 244, 247, 249, 252,
     255};
-uint16_t ampOutInterfLast = 2;
 uint16_t outputVolume = 100;
 bool muteOverride = false;
 
@@ -523,6 +522,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
                 }
                 if (root.containsKey("amp_output")) {
                     ampOutInterf =  (root["amp_output"] == "0") ? AMP_OUT_SPEAKERS : AMP_OUT_HEADPHONES;
+                     wb.SpiWrite(hal::kConfBaseAddress+11,(const uint8_t *)(&ampOutInterf), sizeof(uint16_t));
                 }
                 if (root.containsKey("gain")) {
                     mics.SetGain((int)root["gain"]);
@@ -840,12 +840,6 @@ void AudioPlayTask(void *p) {
             //Post some stats!
             sprintf(str, "Samplerate: %d, Channels: %d, Format: %04X, Bits per Sample: %04X", (int)Message.SampleRate, (int)Message.NumChannels, (int)Message.Format, (int)Message.BitsPerSample);
             publishDebug(str);
-
-            //Output amp changed, write that to the config
-            if(ampOutInterf != ampOutInterfLast) {
-                wb.SpiWrite(hal::kConfBaseAddress+11,(const uint8_t *)(&ampOutInterf), sizeof(uint16_t));
-                ampOutInterfLast = ampOutInterf;
-            }
 
             //unmute output unless set to mute
             uint16_t muteValue = 0;
