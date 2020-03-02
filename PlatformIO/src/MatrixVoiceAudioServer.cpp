@@ -522,7 +522,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
                 }
                 if (root.containsKey("amp_output")) {
                     ampOutInterf =  (root["amp_output"] == "0") ? AMP_OUT_SPEAKERS : AMP_OUT_HEADPHONES;
-                     wb.SpiWrite(hal::kConfBaseAddress+11,(const uint8_t *)(&ampOutInterf), sizeof(uint16_t));
+                    wb.SpiWrite(hal::kConfBaseAddress+11,(const uint8_t *)(&ampOutInterf), sizeof(uint16_t));
                 }
                 if (root.containsKey("gain")) {
                     mics.SetGain((int)root["gain"]);
@@ -560,6 +560,16 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
             DeserializationError err = deserializeJson(doc, payloadstr.c_str());
             if (!err) {
                 JsonObject root = doc.as<JsonObject>();
+                if (root.containsKey("samplerate")) {
+                    bool d = DEBUG;
+                    DEBUG = true;
+                    uint8_t rate;
+                    wb.SpiRead(hal::kConfBaseAddress+9, &rate, sizeof(uint8_t));
+                    char str[100];
+                    sprintf(str, "Samplerate: %d", (int)rate);
+                    publishDebug(str);
+                    DEBUG = d;
+                }
                 if (root.containsKey("debug")) {
                     DEBUG = (root["debug"] == "true") ? true : false;
                 }
