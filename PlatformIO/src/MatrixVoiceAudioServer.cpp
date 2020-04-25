@@ -23,7 +23,7 @@
    v3.1:
     - Only listen to SITEID to toggle hotword
     - Got rid of String, leads to Heap Fragmentation
-    - Add dynamic brihtness, post {"brightness": 50 } to SITEID/everloop
+    - Add dynamic brightness, post {"brightness": 50 } to SITEID/everloop
     - Fix stability, using semaphores
    v3.2:
     - Add dynamic colors, see readme for documentation
@@ -61,6 +61,9 @@
     - Added ondevice wakeword detection using WakeNet, only Alexa available
    v5.1:
     - Added volume control, publish {"volume": 50} to the sitesid/audio topic
+   v5.12:
+    - Add dynamic hotword brightness, post {"hotword_brightness": 50 } to SITEID/everloop
+
 * ************************************************************************ */
 
 #include <Arduino.h>
@@ -170,6 +173,7 @@ int wifi_disc_colors[4] = {255, 0, 0, 0};
 int audio_disc_colors[4] = {255, 0, 0, 255};
 int update_colors[4] = {0, 0, 0, 255};
 int brightness = 15;
+int hotword_brightness = 15;
 long lastReconnectAudio = 0;
 long lastCounterTick = 0;
 int streamMessageCount = 0;
@@ -464,6 +468,10 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
                     // all values below 10 is read as 0 in gamma8, we map 0 to 10
                     brightness = (int)(root["brightness"]) * 90 / 100 + 10;
                 }
+                if (root.containsKey("hotword_brightness")) {
+                    // all values below 10 is read as 0 in gamma8, we map 0 to 10
+                    hotword_brightness = (int)(root["hotword_brightness"]) * 90 / 100 + 10;
+                }
                 if (root.containsKey("hotword")) {
                     hotword_colors[0] = root["hotword"][0];
                     hotword_colors[1] = root["hotword"][1];
@@ -691,11 +699,15 @@ void everloopAnimation(void *p) {
     while (1) {
         xEventGroupWaitBits(everloopGroup, ANIMATE, true, true, portMAX_DELAY);  // Wait for the bit before updating
         if (xSemaphoreTake(wbSemaphore, (TickType_t)5000) == pdTRUE) {
+            int br = brightness;
+            if (hotword_detected) {
+                br = hotword_brightness;
+            }
             for (int i = 0; i < image1d.leds.size(); i++) {
-                red = ((i + 1) * brightness / image1d.leds.size()) * idle_colors[0] / 100;
-                green = ((i + 1) * brightness / image1d.leds.size()) * idle_colors[1] / 100;
-                blue = ((i + 1) * brightness / image1d.leds.size()) * idle_colors[2] / 100;
-                white = ((i + 1) * brightness / image1d.leds.size()) * idle_colors[3] / 100;
+                red = ((i + 1) * br / image1d.leds.size()) * idle_colors[0] / 100;
+                green = ((i + 1) * br / image1d.leds.size()) * idle_colors[1] / 100;
+                blue = ((i + 1) * br / image1d.leds.size()) * idle_colors[2] / 100;
+                white = ((i + 1) * br / image1d.leds.size()) * idle_colors[3] / 100;
                 image1d.leds[(i + position) % image1d.leds.size()].red = pgm_read_byte(&gamma8[red]);
                 image1d.leds[(i + position) % image1d.leds.size()].green = pgm_read_byte(&gamma8[green]);
                 image1d.leds[(i + position) % image1d.leds.size()].blue = pgm_read_byte(&gamma8[blue]);
@@ -727,6 +739,10 @@ void everloopTask(void *p) {
             int g = 0;
             int b = 0;
             int w = 0;
+            int br = brightness;
+            if (hotword_detected) {
+                br = hotword_brightness;
+            }
             if (isUpdateInProgess) {
                 r = update_colors[0];
                 g = update_colors[1];
@@ -753,13 +769,13 @@ void everloopTask(void *p) {
                 b = idle_colors[2];
                 w = idle_colors[3];
             }
-            r = floor(brightness * r / 100);
+            r = floor(br * r / 100);
             r = pgm_read_byte(&gamma8[r]);
-            g = floor(brightness * g / 100);
+            g = floor(br * g / 100);
             g = pgm_read_byte(&gamma8[g]);
-            b = floor(brightness * b / 100);
+            b = floor(br * b / 100);
             b = pgm_read_byte(&gamma8[b]);
-            w = floor(brightness * w / 100);
+            w = floor(br * w / 100);
             w = pgm_read_byte(&gamma8[w]);
             for (hal::LedValue &led : image1d.leds) {
                 led.red = r;
