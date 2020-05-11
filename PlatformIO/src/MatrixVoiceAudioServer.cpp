@@ -63,6 +63,8 @@
     - Added volume control, publish {"volume": 50} to the sitesid/audio topic
    v5.12:
     - Add dynamic hotword brightness, post {"hotword_brightness": 50 } to SITEID/everloop
+   v5.12.1:
+    - Fixed a couple of defects regarding input mute and disconnects
 
 * ************************************************************************ */
 
@@ -328,6 +330,8 @@ bool connectAudio() {
         if (asyncClient.connected()) {
             publishDebug("Connected to synch MQTT!");
         }
+        // start streaming
+        xEventGroupSetBits(audioGroup, STREAM);
     }
     return audioServer.connected();
 }
@@ -344,11 +348,14 @@ void WiFiEvent(WiFiEvent_t event) {
             break;
         case SYSTEM_EVENT_STA_GOT_IP:
             wifi_connected = true;
+            Serial.println("Connected to Wifi!");
             xEventGroupSetBits(everloopGroup,EVERLOOP);  // Set the bit so the everloop gets updated
+            xTimerStop(wifiReconnectTimer, 0);  // Stop the reconnect timer
             connectToMqtt();
             break;
         case SYSTEM_EVENT_STA_DISCONNECTED:
             wifi_connected = false;
+            Serial.println("Disconnected from Wifi!");
             xEventGroupSetBits(everloopGroup, EVERLOOP);
             xTimerStop(mqttReconnectTimer, 0);  // Do not reconnect to MQTT while reconnecting to network
             xTimerStart(wifiReconnectTimer, 0);  // Start the reconnect timer
@@ -523,7 +530,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
                     }
                 }
                 if (root.containsKey("mute_input")) {
-                    sendAudio = (root["mute_input"] == "true") ? true : false;
+                    sendAudio = (root["mute_input"] == "true") ? false : true;
                 }
                 if (root.containsKey("mute_output")) {
                     muteOverride = (root["mute_output"] == "true") ? true : false;
@@ -802,7 +809,7 @@ void interleave(const int16_t * in_L, const int16_t * in_R, int16_t * out, const
     }
 }
 
-void playBytes(int16_t* input, spx_uint32_t length) {
+void playBytes(int16_t* input, uint32_t length) {
     const int kMaxWriteLength = 1024;
     float sleep = 4000;
     int total = length * sizeof(int16_t);
@@ -924,8 +931,8 @@ void AudioPlayTask(void *p) {
                         std::this_thread::sleep_for(std::chrono::microseconds((int)sleep) * 2);
                     }
                 } else {
-                    spx_uint32_t in_len;
-                    spx_uint32_t out_len;
+                    uint32_t in_len;
+                    uint32_t out_len;
                     in_len = bytes_to_read / sizeof(int16_t);
                     out_len = bytes_to_read * (float)(44100 / Message.SampleRate);
                     int16_t output[out_len];
@@ -1064,7 +1071,7 @@ void setup() {
     WiFi.begin(WIFI_SSID, WIFI_PASS);
     while (WiFi.waitForConnectResult() != WL_CONNECTED) {
         Serial.println("Connection Failed! Rebooting...");
-        delay(5000);
+        delay(1000);
         ESP.restart();
     }
 
@@ -1115,8 +1122,6 @@ void setup() {
         });
     ArduinoOTA.begin();
 
-    // start streaming
-    xEventGroupSetBits(audioGroup, STREAM);
 }
 
 /* ************************************************************************ *
@@ -1124,25 +1129,28 @@ void setup() {
  * ************************************************************************ */
 void loop() {
     ArduinoOTA.handle();
-    if (!isUpdateInProgess) {
-        long now = millis();
-        if (!audioServer.connected()) {
+    if (!isUpdateInProgess && WiFi.isConnected()) {//
+       char str[100];
+       long now = millis();
+        if (!audioServer.connected()) {            
             if (now - lastReconnectAudio > 2000) {
                 lastReconnectAudio = now;
                 // Attempt to reconnect
                 if (connectAudio()) {
                     lastReconnectAudio = 0;
+                } else {
+                    //Fix for socket errors and then failure to reconnect.
+                    //Happens on some routers, unknown why, so this is a workaround
+                    WiFi.disconnect();
                 }
             }
-        } else {
-            audioServer.loop();
         }
         if (now - lastCounterTick > 5000) {
             // reset every 5 seconds. Change leds if there is a problem
             // number of messages should be slightly over 300 per 5 seconds
-            // so under 200 message is surely a problem, 300 is too tight as setting
+            // so under 200 message is surely a problem, 300 is too tight as setting 
             lastCounterTick = now;
-            if (streamMessageCount < 200) {
+            if (streamMessageCount < 200 && sendAudio) {
                 // issue with audiostreaming
                 if (audioOK) {
                     audioOK = false;
@@ -1156,7 +1164,6 @@ void loop() {
             }
             streamMessageCount = 0;
         }
-        char str[100];
         UBaseType_t stackMaxTmp = audioPlayStack - uxTaskGetStackHighWaterMark(audioPlayHandle);
         if (stackMaxTmp > stackMaxAudioPlay) {
             stackMaxAudioPlay = stackMaxTmp;
