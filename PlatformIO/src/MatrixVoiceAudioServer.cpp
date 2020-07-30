@@ -7,8 +7,8 @@
    See https://snips.ai/ or https://rhasspy.readthedocs.io/en/latest/ for more information
 
    Author:  Paul Romkes
-   Date:    November 2019
-   Version: 4.5.1
+   Date:    July 2020
+   Version: 6.0
 
    Changelog:
    ==========
@@ -65,6 +65,9 @@
     - Add dynamic hotword brightness, post {"hotword_brightness": 50 } to SITEID/everloop
    v5.12.1:
     - Fixed a couple of defects regarding input mute and disconnects
+   v6.0:
+    - Added configuration webserver
+    - Improved stability for MQTT stream
 
 * ************************************************************************ */
 
@@ -97,6 +100,10 @@ extern "C" {
     #include "esp_wn_iface.h"
 }
 
+#include "SPIFFS.h"
+#include "ESPAsyncWebServer.h"
+#include "index_html.h"
+
 extern const esp_wn_iface_t esp_sr_wakenet3_quantized;
 extern const model_coeff_getter_t get_coeff_wakeNet3_model_float;
 #define WAKENET_COEFF get_coeff_wakeNet3_model_float
@@ -117,9 +124,12 @@ static const model_coeff_getter_t *model_coeff_getter = &WAKENET_COEFF;
 // These parameters enable you to select the default value for output
 enum {
   AMP_OUT_SPEAKERS = 0,
-  AMP_OUT_HEADPHONES
+  AMP_OUT_HEADPHONE = 1
 };
-uint16_t ampOutInterf = AMP_OUT_HEADPHONES;
+enum {
+  HW_LOCAL = 0,
+  HW_REMOTE = 1
+};
 
 // Convert 4 byte little-endian to a long,
 #define longword(bfr, ofs) (bfr[ofs + 3] << 24 | bfr[ofs + 2] << 16 | bfr[ofs + 1] << 8 | bfr[ofs + 0])
@@ -136,6 +146,26 @@ AsyncMqttClient asyncClient;    // ASYNCH client to be able to handle huge
                                 // messages like WAV files
 PubSubClient audioServer(net);  // We also need a sync client, asynch leads to
                                 // errors on the audio thread
+AsyncWebServer server(80);
+
+//Configuration defaults
+struct Config {
+  IPAddress mqtt_host;
+  bool mqtt_valid = false;
+  int mqtt_port = 1883;
+  bool mute_input = false;
+  bool mute_output = false;
+  uint16_t hotword_detection = HW_REMOTE;
+  uint16_t amp_output = AMP_OUT_HEADPHONE;
+  int brightness = 15;
+  int hotword_brightness = 15;  
+  uint16_t volume = 100;
+  int gain = 5;
+  int CHUNK = 256;  // set to multiplications of 256, voice returns a set of 256
+};
+const char *configfile = "/config.json"; 
+Config config;
+
 // Timers
 TimerHandle_t mqttReconnectTimer;
 TimerHandle_t wifiReconnectTimer;
@@ -174,26 +204,20 @@ int idle_colors[4] = {0, 0, 255, 0};
 int wifi_disc_colors[4] = {255, 0, 0, 0};
 int audio_disc_colors[4] = {255, 0, 0, 255};
 int update_colors[4] = {0, 0, 0, 255};
-int brightness = 15;
-int hotword_brightness = 15;
-long lastReconnectAudio = 0;
+int retryCount = 0;
 long lastCounterTick = 0;
 int streamMessageCount = 0;
 long message_size, elapsed, start = 0;
 RingBuf<uint8_t, 1024 * 4> audioData;
-bool sendAudio = true;
 bool audioOK = true;
 bool wifi_connected = false;
 bool hotword_detected = false;
 bool isUpdateInProgess = false;
 bool streamingBytes = false;
 bool endStream = false;
-bool localHotwordDetection = false;
 bool DEBUG = false;
 std::string finishedMsg = "";
 std::string detectMsg = "";
-int message_count;
-int CHUNK = 256;  // set to multiplications of 256, voice return a set of 256
 int chunkValues[] = {32, 64, 128, 256, 512, 1024};
 static EventGroupHandle_t everloopGroup;
 static EventGroupHandle_t audioGroup;
@@ -219,8 +243,6 @@ const uint8_t PROGMEM gamma8[] = {
     180, 182, 184, 186, 189, 191, 193, 196, 198, 200, 203, 205, 208, 210, 213,
     215, 218, 220, 223, 225, 228, 231, 233, 236, 239, 241, 244, 247, 249, 252,
     255};
-uint16_t outputVolume = 100;
-bool muteOverride = false;
 
 /* ************************************************************************* *
       MQTT TOPICS
@@ -313,29 +335,124 @@ void publishDebug(const char* message) {
     }
 }
 
+void loadConfiguration(const char *filename, Config &config) {
+  File file = SPIFFS.open(filename);
+  StaticJsonDocument<512> doc;
+  // Deserialize the JSON document
+  DeserializationError error = deserializeJson(doc, file);
+  if (error) {
+    Serial.println(F("Failed to read file, using default configuration"));
+  } else {
+    serializeJsonPretty(doc, Serial);  
+    char ip[64];
+    strlcpy(ip,doc["mqtt_host"],sizeof(ip));
+    config.mqtt_valid = config.mqtt_host.fromString(ip);
+    config.mqtt_port = doc["mqtt_port"];
+    config.mute_input = doc["mute_input"];
+    config.mute_output = doc["mute_output"];
+    wb.SpiWrite(hal::kConfBaseAddress+10,(const uint8_t *)(&config.mute_output), sizeof(uint16_t));
+    config.amp_output = doc["amp_output"];
+    wb.SpiWrite(hal::kConfBaseAddress+11,(const uint8_t *)(&config.amp_output), sizeof(uint16_t));
+    config.brightness = doc["brightness"];
+    config.hotword_brightness = doc["hotword_brightness"];
+    config.hotword_detection = doc["hotword_detection"];
+    config.volume = doc["volume"];
+    uint16_t outputVolume = (100 - config.volume) * 25 / 100;
+    wb.SpiWrite(hal::kConfBaseAddress+8,(const uint8_t *)(&outputVolume), sizeof(uint16_t));
+    config.gain = doc["gain"];
+    config.CHUNK = doc["framerate"];
+    if (config.mqtt_host[0] == 0) {
+        config.mqtt_valid = false;
+    }
+  }
+  file.close();
+}
+
+void saveConfiguration(const char *filename, Config &config) {
+    if (SPIFFS.exists(filename)) {
+        SPIFFS.remove(filename);
+    }
+    File file = SPIFFS.open(filename, "w");
+    if (!file) {
+        Serial.println(F("Failed to create file"));
+        return;
+    }
+    StaticJsonDocument<256> doc;
+    char ip[64];
+    strlcpy(ip,config.mqtt_host.toString().c_str(),sizeof(ip)); 
+    config.mqtt_valid = config.mqtt_host.fromString(ip);
+    doc["mqtt_host"] = config.mqtt_host.toString();
+    doc["mqtt_port"] = config.mqtt_port;
+    doc["mqtt_valid"] = config.mqtt_valid;
+    doc["mute_input"] = config.mute_input;
+    doc["mute_output"] = config.mute_output;
+    doc["amp_output"] = config.amp_output;
+    doc["brightness"] = config.brightness;
+    doc["hotword_brightness"] = config.hotword_brightness;
+    doc["hotword_detection"] = config.hotword_detection;
+    doc["volume"] = config.volume;
+    doc["gain"] = config.gain;
+    doc["framerate"] = config.CHUNK;
+    if (serializeJson(doc, file) == 0) {
+         Serial.println(F("Failed to write to file"));
+    }
+    file.close();
+}
+
 void connectToWifi() {
     Serial.println("Connecting to Wi-Fi...");
+    WiFi.mode(WIFI_STA);
     WiFi.begin(WIFI_SSID, WIFI_PASS);
+    retryCount = 0;
+    while (WiFi.waitForConnectResult() != WL_CONNECTED) {
+        retryCount++;
+        if (retryCount > 2) {
+            Serial.println("Connection Failed! Rebooting...");
+            ESP.restart();
+        }
+    }
 }
 
 void connectToMqtt() {
-    Serial.println("Connecting to asynch MQTT...");
-    asyncClient.connect();
-}
-
-bool connectAudio() {
-    Serial.println("Connecting to synch MQTT...");
-    if (audioServer.connect("MatrixVoiceAudio", MQTT_USER, MQTT_PASS)) {
-        Serial.println("Connected to synch MQTT!");
-        if (asyncClient.connected()) {
-            publishDebug("Connected to synch MQTT!");
-        }
-        // start streaming
-        xEventGroupSetBits(audioGroup, STREAM);
+    if (audioServer.connected() && asyncClient.connected()) {
+        return;
     }
-    return audioServer.connected();
+    if (config.mqtt_valid) {
+        if (!asyncClient.connected()) {            
+            xTimerStop(mqttReconnectTimer,0);
+            Serial.println("Connecting to aSynchMQTT as MatrixVoice...");
+            Serial.printf("Config valid, connecting to %s\r\n",config.mqtt_host.toString().c_str());
+            asyncClient.setClientId("MatrixVoice");
+            asyncClient.setServer(config.mqtt_host, config.mqtt_port);
+            asyncClient.setCredentials(MQTT_USER, MQTT_PASS);
+            asyncClient.connect();
+            retryCount++;
+        }
+        if (!audioServer.connected()) {
+            audioServer.setServer(config.mqtt_host, config.mqtt_port);
+            Serial.println("Connecting to SynchMQTT as MatrixVoiceAudio...");
+            if (audioServer.connect("MatrixVoiceAudio", MQTT_USER, MQTT_PASS)) {
+                Serial.println("Connected as MatrixVoiceAudio!");
+                if (asyncClient.connected()) {
+                    publishDebug("Connected as MatrixVoiceAudio!");
+                }
+                // start streaming
+                xEventGroupSetBits(audioGroup, STREAM);
+            } else {
+                retryCount++;
+            }
+        }
+        if (retryCount > 3) {
+            //There is some wierd connection issue with MQTT causing a software connection error.
+            //This causes the WiFi to loose connection, but this is no disconnect event.
+            //The problem is somewhere in the MQTT code, so this is a workaround.
+            //When WiFi is disconnected, it reconnects and also the MQTT is connecting again
+            WiFi.disconnect();
+        }
+    }  else {
+        Serial.println("No valid IP address for MQTT");
+    }
 }
-
 
 // ---------------------------------------------------------------------------
 // WIFI event
@@ -348,10 +465,10 @@ void WiFiEvent(WiFiEvent_t event) {
             break;
         case SYSTEM_EVENT_STA_GOT_IP:
             wifi_connected = true;
-            Serial.println("Connected to Wifi!");
+            Serial.println("Connected to Wifi with IP: " + WiFi.localIP().toString());
             xEventGroupSetBits(everloopGroup,EVERLOOP);  // Set the bit so the everloop gets updated
+            xTimerStart(mqttReconnectTimer, 0); 
             xTimerStop(wifiReconnectTimer, 0);  // Stop the reconnect timer
-            connectToMqtt();
             break;
         case SYSTEM_EVENT_STA_DISCONNECTED:
             wifi_connected = false;
@@ -369,7 +486,7 @@ void WiFiEvent(WiFiEvent_t event) {
 // MQTT Connect event
 // ---------------------------------------------------------------------------
 void onMqttConnect(bool sessionPresent) {
-    Serial.println("Connected to MQTT.");
+    Serial.println("Connected as MatrixVoice");
     asyncClient.subscribe(playBytesTopic.c_str(), 0);
     asyncClient.subscribe(playBytesStreamingTopic.c_str(), 0);
     asyncClient.subscribe(toggleOffTopic.c_str(), 0);
@@ -380,7 +497,6 @@ void onMqttConnect(bool sessionPresent) {
     asyncClient.subscribe(audioTopic.c_str(), 0);
     asyncClient.subscribe(debugTopic.c_str(), 0);
     publishDebug("Connected to asynch MQTT!");
-    // xEventGroupClearBits(everloopGroup, ANIMATE);
 }
 
 // ---------------------------------------------------------------------------
@@ -388,12 +504,7 @@ void onMqttConnect(bool sessionPresent) {
 // ---------------------------------------------------------------------------
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
     Serial.println("Disconnected from MQTT.");
-    if (!isUpdateInProgess) {
-        // xEventGroupSetBits(everloopGroup, ANIMATE);
-        if (WiFi.isConnected()) {
-            xTimerStart(mqttReconnectTimer, 0);
-        }
-    }
+    xTimerStart(mqttReconnectTimer,0);
 }
 
 // ---------------------------------------------------------------------------
@@ -472,12 +583,10 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
             if (!err) {
                 JsonObject root = doc.as<JsonObject>();
                 if (root.containsKey("brightness")) {
-                    // all values below 10 is read as 0 in gamma8, we map 0 to 10
-                    brightness = (int)(root["brightness"]) * 90 / 100 + 10;
+                    config.brightness = (int)(root["brightness"]);
                 }
                 if (root.containsKey("hotword_brightness")) {
-                    // all values below 10 is read as 0 in gamma8, we map 0 to 10
-                    hotword_brightness = (int)(root["hotword_brightness"]) * 90 / 100 + 10;
+                    config.hotword_brightness = (int)(root["hotword_brightness"]);
                 }
                 if (root.containsKey("hotword")) {
                     hotword_colors[0] = root["hotword"][0];
@@ -503,6 +612,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
                     update_colors[2] = root["update"][2];
                     update_colors[3] = root["update"][3];
                 }
+                saveConfiguration(configfile, config);
                 xEventGroupSetBits(everloopGroup, EVERLOOP);
             } else {
                 publishDebug(err.c_str());
@@ -517,10 +627,9 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
                     bool found = false;
                     for (int i = 0; i < 6; i++) {
                         if (chunkValues[i] == root["framerate"]) {
-                            CHUNK = root["framerate"];
-                            message_count = (int)round(mics.NumberOfSamples() / CHUNK);
-                            header.riff_length = (uint32_t)sizeof(header) + (CHUNK * WIDTH);
-                            header.data_length = CHUNK * WIDTH;
+                            config.CHUNK = root["framerate"];
+                            header.riff_length = (uint32_t)sizeof(header) + (config.CHUNK * WIDTH);
+                            header.data_length = config.CHUNK * WIDTH;
                             found = true;
                             break;
                         }
@@ -530,14 +639,14 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
                     }
                 }
                 if (root.containsKey("mute_input")) {
-                    sendAudio = (root["mute_input"] == "true") ? false : true;
+                    config.mute_input = (root["mute_input"] == "true") ? true : false;
                 }
                 if (root.containsKey("mute_output")) {
-                    muteOverride = (root["mute_output"] == "true") ? true : false;
+                    config.mute_output = (root["mute_output"] == "true") ? true : false;
                 }
                 if (root.containsKey("amp_output")) {
-                    ampOutInterf =  (root["amp_output"] == "0") ? AMP_OUT_SPEAKERS : AMP_OUT_HEADPHONES;
-                    wb.SpiWrite(hal::kConfBaseAddress+11,(const uint8_t *)(&ampOutInterf), sizeof(uint16_t));
+                    config.amp_output =  (root["amp_output"] == "0") ? AMP_OUT_SPEAKERS : AMP_OUT_HEADPHONE;
+                    wb.SpiWrite(hal::kConfBaseAddress+11,(const uint8_t *)(&config.amp_output), sizeof(uint16_t));
                 }
                 if (root.containsKey("gain")) {
                     mics.SetGain((int)root["gain"]);
@@ -545,13 +654,15 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
                 if (root.containsKey("volume")) {
                     uint16_t wantedVolume = (uint16_t)root["volume"];                    
                     if (wantedVolume <= 100) {
-                        outputVolume = (100 - wantedVolume) * 25 / 100; //25 is minimum volume
+                        uint16_t outputVolume = (100 - wantedVolume) * 25 / 100; //25 is minimum volume
                         wb.SpiWrite(hal::kConfBaseAddress+8,(const uint8_t *)(&outputVolume), sizeof(uint16_t));
+                        config.volume = wantedVolume;
                    }
                 }
                 if (root.containsKey("hotword")) {
-                    localHotwordDetection = (root["hotword"] == "local") ? true : false;
+                    config.hotword_detection = (root["hotword"] == "local") ? HW_LOCAL : HW_REMOTE;
                 }
+                saveConfiguration(configfile, config);
             } else {
                 publishDebug(err.c_str());
             }
@@ -634,21 +745,27 @@ void Audiostream(void *p) {
         xEventGroupWaitBits(audioGroup, STREAM, false, false, portMAX_DELAY);
         // See if we can obtain or "Take" the Serial Semaphore.
         // If the semaphore is not available, wait 5 ticks of the Scheduler to see if it becomes free.
-        if (sendAudio && audioServer.connected() &&
+        if (!config.mute_input && audioServer.connected() &&
             (xSemaphoreTake(wbSemaphore, (TickType_t)5000) == pdTRUE)) {
             // We are connected, make sure there is no overlap with the STREAM bit
             if (xEventGroupGetBits(audioGroup) != PLAY) {
                 mics.Read();
 
+                int message_count;
+                // NumberOfSamples() = kMicarrayBufferSize / kMicrophoneChannels = 4069 / 8
+                // = 512 Depending on the config.CHUNK, we need to calculate how many message we
+                // need to send
+                message_count = (int)round(mics.NumberOfSamples() / config.CHUNK);
+
                 // Sound buffers
-                uint16_t voicebuffer[CHUNK];
-                uint8_t voicemapped[CHUNK * WIDTH];
-                uint8_t payload[sizeof(header) + (CHUNK * WIDTH)];
+                uint16_t voicebuffer[config.CHUNK];
+                uint8_t voicemapped[config.CHUNK * WIDTH];
+                uint8_t payload[sizeof(header) + (config.CHUNK * WIDTH)];
 
-                if (!hotword_detected && localHotwordDetection) {
+                if (!hotword_detected && config.hotword_detection == HW_LOCAL) {
 
-                    int16_t voicebuffer_wk[CHUNK * WIDTH];
-                    for (uint32_t s = 0; s < CHUNK * WIDTH; s++) {
+                    int16_t voicebuffer_wk[config.CHUNK * WIDTH];
+                    for (uint32_t s = 0; s < config.CHUNK * WIDTH; s++) {
                         voicebuffer_wk[s] = mics.Beam(s);
                     }
                     
@@ -665,19 +782,19 @@ void Audiostream(void *p) {
                     }
                 }
 
-                if (hotword_detected || !localHotwordDetection) {
+                if (hotword_detected || config.hotword_detection == HW_REMOTE) {
                     // Message count is the Matrix NumberOfSamples divided by the
                     // framerate of Snips. This defaults to 512 / 256 = 2. If you
                     // lower the framerate, the AudioServer has to send more
                     // wavefile because the NumOfSamples is a fixed number
                     for (int i = 0; i < message_count; i++) {
-                        for (uint32_t s = CHUNK * i; s < CHUNK * (i + 1); s++) {
-                            voicebuffer[s - (CHUNK * i)] = mics.Beam(s);
+                        for (uint32_t s = config.CHUNK * i; s < config.CHUNK * (i + 1); s++) {
+                            voicebuffer[s - (config.CHUNK * i)] = mics.Beam(s);
                         }
                         // voicebuffer will hold 256 samples of 2 bytes, but we need
                         // it as 1 byte We do a memcpy, because I need to add the
                         // wave header as well
-                        memcpy(voicemapped, voicebuffer, CHUNK * WIDTH);
+                        memcpy(voicemapped, voicebuffer, config.CHUNK * WIDTH);
 
                         // Add the wave header
                         memcpy(payload, &header, sizeof(header));
@@ -706,9 +823,11 @@ void everloopAnimation(void *p) {
     while (1) {
         xEventGroupWaitBits(everloopGroup, ANIMATE, true, true, portMAX_DELAY);  // Wait for the bit before updating
         if (xSemaphoreTake(wbSemaphore, (TickType_t)5000) == pdTRUE) {
-            int br = brightness;
+            // all values below 10 is read as 0 in gamma8, we map 0 to 10
+            int br = config.brightness * 90 / 100 + 10;
             if (hotword_detected) {
-                br = hotword_brightness;
+                // all values below 10 is read as 0 in gamma8, we map 0 to 10
+                br = config.hotword_brightness * 90 / 100 + 10;
             }
             for (int i = 0; i < image1d.leds.size(); i++) {
                 red = ((i + 1) * br / image1d.leds.size()) * idle_colors[0] / 100;
@@ -746,9 +865,11 @@ void everloopTask(void *p) {
             int g = 0;
             int b = 0;
             int w = 0;
-            int br = brightness;
+            // all values below 10 is read as 0 in gamma8, we map 0 to 10
+            int br = config.brightness * 90 / 100 + 10;
             if (hotword_detected) {
-                br = hotword_brightness;
+               // all values below 10 is read as 0 in gamma8, we map 0 to 10
+               br = config.hotword_brightness * 90 / 100 + 10;
             }
             if (isUpdateInProgess) {
                 r = update_colors[0];
@@ -876,7 +997,7 @@ void AudioPlayTask(void *p) {
 
             //unmute output unless set to mute
             uint16_t muteValue = 0;
-            if(muteOverride == false) {
+            if(!config.mute_output) {
                 wb.SpiWrite(hal::kConfBaseAddress+10,(const uint8_t *)(&muteValue), sizeof(uint16_t));
             }
 
@@ -992,12 +1113,282 @@ void AudioPlayTask(void *p) {
     vTaskDelete(NULL);
 }
 
+String processor(const String& var){
+  if(var == "MQTT_HOST"){
+      return config.mqtt_host.toString();
+  }
+  if(var == "MQTT_PORT"){
+      return String(config.mqtt_port);
+  }
+  if (var == "MUTE_INPUT") {
+      return (config.mute_input) ? "checked" : "";
+  }
+  if (var == "MUTE_OUTPUT") {
+      return (config.mute_output) ? "checked" : "";
+  }
+  if (var == "AMP_OUT_SPEAKERS") {
+      return (config.amp_output == AMP_OUT_SPEAKERS) ? "selected" : "";
+  }
+  if (var == "AMP_OUT_HEADPHONE") {
+      return (config.amp_output == AMP_OUT_HEADPHONE) ? "selected" : "";
+  }
+  if (var == "BRIGHTNESS") {
+      return String(config.brightness);
+  }
+  if (var == "HW_BRIGHTNESS") {
+      return String(config.hotword_brightness);
+  }
+  if (var == "HW_LOCAL") {
+      return (config.hotword_detection == HW_LOCAL) ? "selected" : "";
+  }
+  if (var == "HW_REMOTE") {
+      return (config.hotword_detection == HW_REMOTE) ? "selected" : "";
+  }
+  if (var == "VOLUME") {
+      return String(config.volume);
+  }
+  if (var == "GAIN") {
+      return String(config.gain);
+  }
+  if (var == "FR_32") {
+      return (config.CHUNK == 32) ? "selected" : "";
+  }
+  if (var == "FR_64") {
+      return (config.CHUNK == 64) ? "selected" : "";
+  }
+  if (var == "FR_128") {
+      return (config.CHUNK == 128) ? "selected" : "";
+  }
+  if (var == "FR_256") {
+      return (config.CHUNK == 256) ? "selected" : "";
+  }
+  if (var == "FR_512") {
+      return (config.CHUNK == 512) ? "selected" : "";
+  }
+  if (var == "FR_1024") {
+      return (config.CHUNK == 1024) ? "selected" : "";
+  }
+  return String();
+}
+
+void handleFSf ( AsyncWebServerRequest* request, const String& route ) {
+    AsyncWebServerResponse *response ;
+
+    if ( route.indexOf ( "index.html" ) >= 0 ) // Index page is in PROGMEM
+    {
+        if (request->method() == HTTP_POST) {
+            int params = request->params();
+            bool saveNeeded = false;
+            bool mi_found = false;
+            bool mo_found = false;
+            for(int i=0;i<params;i++){
+                AsyncWebParameter* p = request->getParam(i);
+                Serial.printf("Parameter %s, value %s\r\n", p->name().c_str(), p->value().c_str());
+                if(p->name() == "mqtt_host"){
+                    char ip[64];
+                    strlcpy(ip,p->value().c_str(),sizeof(ip));
+                    IPAddress adr;
+                    adr.fromString(ip);
+                    if (config.mqtt_host != adr) {
+                    Serial.println("Mqtt host changed");
+                    config.mqtt_valid = config.mqtt_host.fromString(ip);
+                    saveNeeded = true;
+                    asyncClient.disconnect();
+                    audioServer.disconnect();
+                    }
+                }
+                if(p->name() == "mqtt_port"){
+                    if (config.mqtt_port != (int)p->value().toInt()) {
+                        Serial.println("Mqtt port changed");
+                        config.mqtt_port = (int)p->value().toInt(); 
+                        saveNeeded = true;
+                        asyncClient.disconnect();
+                        audioServer.disconnect();
+                    }
+                }
+                if(p->name() == "mute_input"){
+                    mi_found = true;
+                    if (!config.mute_input && p->value().equals("on")) {
+                        Serial.println("Mute input changed");
+                        config.mute_input = true;   
+                        if (asyncClient.connected()) {
+                            //use MQTT
+                            std::string msg =  std::string("{\"mute_input\":\"true\"}");
+                            asyncClient.publish(audioTopic.c_str(), 0, false, msg.c_str());
+                        } else {
+                            saveNeeded = true;
+                        }
+                    }
+                }
+                if(p->name() == "mute_output"){
+                    mo_found = true;
+                    if (!config.mute_output && p->value().equals("on")) {
+                        Serial.println("Mute output changed");
+                        config.mute_output = true;       
+                        if (asyncClient.connected()) {
+                            //use MQTT
+                            std::string msg =  std::string("{\"mute_output\":\"true\"}");
+                            asyncClient.publish(audioTopic.c_str(), 0, false, msg.c_str());
+                        } else {
+                            saveNeeded = true;
+                        }
+                    }
+                }
+                if(p->name() == "amp_output"){
+                    if (config.amp_output != (int)p->value().toInt()) {
+                        Serial.println("Amp output changed");
+                        config.amp_output = (p->value().equals("0")) ? AMP_OUT_SPEAKERS : AMP_OUT_HEADPHONE;       
+                        if (asyncClient.connected()) {
+                            //use MQTT
+                            std::string msg =  std::string("{\"amp_output\":\"") + p->value().c_str() + std::string("\"}");
+                            asyncClient.publish(audioTopic.c_str(), 0, false, msg.c_str());
+                        } else {
+                            saveNeeded = true;
+                        }
+                    }
+                }
+                if(p->name() == "framerate"){
+                    if (config.CHUNK != (int)p->value().toInt()) {
+                        Serial.println("CHUNK changed");
+                        config.CHUNK = (int)p->value().toInt();      
+                        if (asyncClient.connected()) {
+                            //use MQTT
+                            std::string msg =  std::string("{\"framerate\":") + p->value().c_str() + std::string("}");
+                            asyncClient.publish(audioTopic.c_str(), 0, false, msg.c_str());
+                        } else {
+                            saveNeeded = true;
+                        }
+                    }
+                }
+                if(p->name() == "brightness"){
+                    if (config.brightness != (int)p->value().toInt()) {
+                        Serial.println("Brightness changed");
+                        config.brightness = (int)p->value().toInt();      
+                        if (asyncClient.connected()) {
+                            //use MQTT
+                            std::string msg =  std::string("{\"brightness\":") + p->value().c_str() + std::string("}");
+                            asyncClient.publish(everloopTopic.c_str(), 0, false, msg.c_str());
+                        } else {
+                            saveNeeded = true;
+                        }
+                    }
+                }
+                if(p->name() == "hw_brightness"){
+                    if (config.hotword_brightness != (int)p->value().toInt()) {
+                        Serial.println("Hotword brightness changed");
+                        config.hotword_brightness = (int)p->value().toInt();
+                        if (asyncClient.connected()) {
+                            //use MQTT
+                            std::string msg =  std::string("{\"hotword_brightness\":") + p->value().c_str() + std::string("}");
+                            asyncClient.publish(everloopTopic.c_str(), 0, false, msg.c_str());
+                        } else {
+                            saveNeeded = true;
+                        }
+                    }
+                }
+                if(p->name() == "hotword_detection"){
+                    if (config.hotword_detection != (int)p->value().toInt()) {
+                        Serial.println("Hotword detection changed");
+                        config.hotword_detection = (p->value().equals("0")) ? HW_LOCAL : HW_REMOTE;       
+                        if (asyncClient.connected()) {
+                            //use MQTT
+                            std::string msg = std::string("{\"hotword\":\"");
+                            msg += (p->value().equals("0")) ? "local" : "remote";
+                            msg += std::string("\"}");
+                            asyncClient.publish(audioTopic.c_str(), 0, false, msg.c_str());
+                        } else {
+                            saveNeeded = true;
+                        }
+                    }
+                }
+                if(p->name() == "gain"){
+                    if (config.gain != (int)p->value().toInt()) {
+                        Serial.println("Gain changed");
+                        config.gain = (int)p->value().toInt();      
+                        if (asyncClient.connected()) {
+                            //use MQTT
+                            std::string msg =  std::string("{\"gain\":") + p->value().c_str() + std::string("}");
+                            asyncClient.publish(audioTopic.c_str(), 0, false, msg.c_str());
+                        } else {
+                            saveNeeded = true;
+                            mics.SetGain(config.gain);
+                        }
+                    }
+                }
+                if(p->name() == "volume"){
+                    if (config.volume != (int)p->value().toInt()) {
+                        Serial.println("Volume changed");
+                        config.volume = (int)p->value().toInt();      
+                        if (asyncClient.connected()) {
+                            //use MQTT
+                            std::string msg =  std::string("{\"volume\":") + p->value().c_str() + std::string("}");
+                            asyncClient.publish(audioTopic.c_str(), 0, false, msg.c_str());
+                        } else {
+                            saveNeeded = true;
+                            uint16_t outputVolume = (100 - config.volume) * 25 / 100; //25 is minimum volume
+                            wb.SpiWrite(hal::kConfBaseAddress+8,(const uint8_t *)(&outputVolume), sizeof(uint16_t));
+                        }
+                    }
+                }
+            }
+            if (!mi_found && config.mute_input) {
+                Serial.println("Mute input not found, value = off");
+                config.mute_input = false;
+                if (asyncClient.connected()) {
+                    //use MQTT
+                    std::string msg =  std::string("{\"mute_input\":\"false\"}");
+                    asyncClient.publish(audioTopic.c_str(), 0, false, msg.c_str());
+                } else {
+                    saveNeeded = true;
+                }
+            }
+            if (!mo_found && config.mute_output) {
+                Serial.println("Mute output not found, value = off");
+                config.mute_output = false;
+                if (asyncClient.connected()) {
+                    //use MQTT
+                    std::string msg =  std::string("{\"mute_output\":\"false\"}");
+                    asyncClient.publish(audioTopic.c_str(), 0, false, msg.c_str());
+                } else {
+                    saveNeeded = true;
+                }
+            }
+            if (saveNeeded) {
+                Serial.println("Settings changed, saving configuration");
+                saveConfiguration(configfile, config);
+            } else {
+                Serial.println("No settings changed");
+            }
+        }
+        response = request->beginResponse_P ( 200, "text/html", index_html, processor ) ;
+    } else {
+        response = request->beginResponse_P ( 200, "text/html", "<html><body>unkown route</body></html>") ;
+    }
+
+    request->send ( response ) ;
+}
+
+void handleRequest ( AsyncWebServerRequest* request )
+{
+    handleFSf ( request, String( "/index.html") ) ;
+}
+
 /* ************************************************************************ *
       SETUP
  * ************************************************************************ */
 void setup() {
     Serial.begin(115200);
     Serial.println("Booting");
+    wb.Init();
+
+    Serial.println("Mounting FS...");
+
+    if (!SPIFFS.begin(true)) {
+        Serial.println("Failed to mount file system");
+    } else {
+        Serial.println("Loading configuration");
+        loadConfiguration(configfile, config);
+    }
 
     // Implementation of Semaphore, otherwise the ESP will crash due to read of
     // the mics
@@ -1008,17 +1399,14 @@ void setup() {
     }
 
     // Reconnect timers
-    mqttReconnectTimer = xTimerCreate("mqttTimer", pdMS_TO_TICKS(2000), pdFALSE, (void *)0, reinterpret_cast<TimerCallbackFunction_t>(connectToMqtt));
-    wifiReconnectTimer = xTimerCreate("wifiTimer", pdMS_TO_TICKS(2000), pdFALSE, (void *)0, reinterpret_cast<TimerCallbackFunction_t>(connectToWifi));
+    mqttReconnectTimer = xTimerCreate("mqttTimer", pdMS_TO_TICKS(2000), pdTRUE, (void *)0, reinterpret_cast<TimerCallbackFunction_t>(connectToMqtt));
+    wifiReconnectTimer = xTimerCreate("wifiTimer", pdMS_TO_TICKS(2000), pdTRUE, (void *)0, reinterpret_cast<TimerCallbackFunction_t>(connectToWifi));
     
     WiFi.onEvent(WiFiEvent);
     asyncClient.setClientId("MatrixVoice");
     asyncClient.onConnect(onMqttConnect);
     asyncClient.onDisconnect(onMqttDisconnect);
     asyncClient.onMessage(onMqttMessage);
-    asyncClient.setServer(MQTT_IP, MQTT_PORT);
-    asyncClient.setCredentials(MQTT_USER, MQTT_PASS);
-    audioServer.setServer(MQTT_IP, MQTT_PORT);
 
     everloopGroup = xEventGroupCreate();
     audioGroup = xEventGroupCreate();
@@ -1028,7 +1416,7 @@ void setup() {
     strncpy(header.fmt_tag, "fmt ", 4);
     strncpy(header.data_tag, "data", 4);
 
-    header.riff_length = (uint32_t)sizeof(header) + (CHUNK * WIDTH);
+    header.riff_length = (uint32_t)sizeof(header) + (config.CHUNK * WIDTH);
     header.fmt_length = 16;
     header.audio_format = 1;
     header.num_channels = 1;
@@ -1036,23 +1424,18 @@ void setup() {
     header.byte_rate = RATE * WIDTH;
     header.block_align = WIDTH;
     header.bits_per_sample = WIDTH * 8;
-    header.data_length = CHUNK * WIDTH;
+    header.data_length = config.CHUNK * WIDTH;
 
-    wb.Init();
     everloop.Setup(&wb);
 
     // setup mics
     mics.Setup(&wb);
+    mics.SetGain(config.gain);
     mics.SetSamplingRate(RATE);
 
     // Microphone Core Init
     hal::MicrophoneCore mic_core(mics);
     mic_core.Setup(&wb);
-
-    // NumberOfSamples() = kMicarrayBufferSize / kMicrophoneChannels = 4069 / 8
-    // = 512 Depending on the CHUNK, we need to calculate how many message we
-    // need to send
-    message_count = (int)round(mics.NumberOfSamples() / CHUNK);
 
     xEventGroupClearBits(audioGroup, PLAY);
     xEventGroupClearBits(audioGroup, STREAM);
@@ -1070,9 +1453,13 @@ void setup() {
     WiFi.mode(WIFI_STA);
     WiFi.begin(WIFI_SSID, WIFI_PASS);
     while (WiFi.waitForConnectResult() != WL_CONNECTED) {
-        Serial.println("Connection Failed! Rebooting...");
-        delay(1000);
-        ESP.restart();
+        retryCount++;
+        if (retryCount > 2) {
+            Serial.println("Connection Failed! Rebooting...");
+            ESP.restart();
+        } else {
+            Serial.println("Connection Failed! Retry...");
+        }
     }
 
     // Create the runnings tasks, AudioStream is on one core, the rest on the other core
@@ -1086,7 +1473,6 @@ void setup() {
     // ---------------------------------------------------------------------------
     // ArduinoOTA
     // ---------------------------------------------------------------------------
-    ArduinoOTA.setHostname(HOSTNAME);
     ArduinoOTA.setPasswordHash(OTA_PASS_HASH);
 
     ArduinoOTA
@@ -1122,6 +1508,9 @@ void setup() {
         });
     ArduinoOTA.begin();
 
+    server.on("/", handleRequest);
+    server.begin();
+
 }
 
 /* ************************************************************************ *
@@ -1129,53 +1518,4 @@ void setup() {
  * ************************************************************************ */
 void loop() {
     ArduinoOTA.handle();
-    if (!isUpdateInProgess && WiFi.isConnected()) {//
-       char str[100];
-       long now = millis();
-        if (!audioServer.connected()) {            
-            if (now - lastReconnectAudio > 2000) {
-                lastReconnectAudio = now;
-                // Attempt to reconnect
-                if (connectAudio()) {
-                    lastReconnectAudio = 0;
-                } else {
-                    //Fix for socket errors and then failure to reconnect.
-                    //Happens on some routers, unknown why, so this is a workaround
-                    WiFi.disconnect();
-                }
-            }
-        }
-        if (now - lastCounterTick > 5000) {
-            // reset every 5 seconds. Change leds if there is a problem
-            // number of messages should be slightly over 300 per 5 seconds
-            // so under 200 message is surely a problem, 300 is too tight as setting 
-            lastCounterTick = now;
-            if (streamMessageCount < 200 && sendAudio) {
-                // issue with audiostreaming
-                if (audioOK) {
-                    audioOK = false;
-                    xEventGroupSetBits(everloopGroup, EVERLOOP);
-                }
-            } else {
-                if (!audioOK) {
-                    audioOK = true;
-                    xEventGroupSetBits(everloopGroup, EVERLOOP);
-                }
-            }
-            streamMessageCount = 0;
-        }
-        UBaseType_t stackMaxTmp = audioPlayStack - uxTaskGetStackHighWaterMark(audioPlayHandle);
-        if (stackMaxTmp > stackMaxAudioPlay) {
-            stackMaxAudioPlay = stackMaxTmp;
-            sprintf(str,"Max stacksize AudioPlay: %d",(int)stackMaxAudioPlay);
-            publishDebug(str);
-        }
-        stackMaxTmp = audioStreamStack - uxTaskGetStackHighWaterMark(audioPlayHandle);
-        if (stackMaxTmp > stackMaxAudioStream) {
-            stackMaxAudioStream = stackMaxTmp;
-            sprintf(str,"Max stacksize AudioStream: %d",(int)stackMaxAudioStream);
-            publishDebug(str);
-        }
-    }
-    delay(1);
 }
