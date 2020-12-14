@@ -29,17 +29,23 @@ if os.path.isfile(settings):
         ("MQTT_PASS", "\\\"" + config[sectionMqtt]["password"] + "\\\""),
         ("MQTT_MAX_PACKET_SIZE", config[sectionMqtt]["maxPacketSize"])
     ])
+
+    if (config[sectionOta]["method"] == "upload") :
+        env.Replace(
+            TARGETS="upload",
+        )
     
-    env.Replace(
-        UPLOAD_PROTOCOL="espota",
-        UPLOAD_PORT=config[sectionMatrix]["hostname"],
-        UPLOAD_FLAGS=[
-            "--port=" + config[sectionOta]["port"],
-            "--auth=" + config[sectionOta]["password"],
-            "--timeout=30",
-            "--f=.pio/build/esp32dev/firmware.bin"
-            ],
-    )
+    if (config[sectionOta]["method"] == "ota") :
+        env.Replace(
+            UPLOAD_PROTOCOL="espota",
+            UPLOAD_PORT=config[sectionMatrix]["hostname"],
+            UPLOAD_FLAGS=[
+                "--port=" + config[sectionOta]["port"],
+                "--auth=" + config[sectionOta]["password"],
+                "--timeout=30",
+                "--f=.pio/build/esp32dev/firmware.bin"
+                ],
+        )
 else:
     print()
     print("Please copy 'settings.ini.example' to 'settings.ini' and set the correct values before building")
