@@ -24,7 +24,7 @@ if os.path.isfile(settings):
         ("HOSTNAME", "\\\"" + config[sectionMatrix]["hostname"] + "\\\""),
         ("MQTT_IP", "IPAddress\(" + config[sectionMqtt]["ip"].replace(".", ",") + "\)"),
         ("MQTT_HOST", "\\\"" + config[sectionMqtt]["hostname"] + "\\\""),
-        ("MQTT_PORT", "\\\"" + config[sectionMqtt]["port"] + "\\\""),
+        ("MQTT_PORT", config[sectionMqtt]["port"]),
         ("MQTT_USER", "\\\"" + config[sectionMqtt]["username"] + "\\\""),
         ("MQTT_PASS", "\\\"" + config[sectionMqtt]["password"] + "\\\""),
         ("MQTT_MAX_PACKET_SIZE", config[sectionMqtt]["maxPacketSize"])
