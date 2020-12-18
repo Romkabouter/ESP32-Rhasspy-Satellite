@@ -27,7 +27,8 @@ if os.path.isfile(settings):
         ("MQTT_PORT", config[sectionMqtt]["port"]),
         ("MQTT_USER", "\\\"" + config[sectionMqtt]["username"] + "\\\""),
         ("MQTT_PASS", "\\\"" + config[sectionMqtt]["password"] + "\\\""),
-        ("MQTT_MAX_PACKET_SIZE", config[sectionMqtt]["maxPacketSize"])
+        ("MQTT_MAX_PACKET_SIZE", config[sectionMqtt]["maxPacketSize"]),
+        ("CONFIG_ASYNC_TCP_RUNNING_CORE", 0)
     ])
 
     if (config[sectionOta]["method"] == "upload") :

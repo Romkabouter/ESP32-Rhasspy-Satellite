@@ -4,77 +4,7 @@
 #include <AsyncMqttClient.h>
 #include <PubSubClient.h>
 #include "RingBuf.h"
-
-#define CONFIG_I2S_BCK_PIN 19
-#define CONFIG_I2S_LRCK_PIN 33
-#define CONFIG_I2S_DATA_PIN 22
-#define CONFIG_I2S_DATA_IN_PIN 23
-
-#define SPEAKER_I2S_NUMBER I2S_NUM_0
-
-#define MODE_MIC 0
-#define MODE_SPK 1
-#define READ_SIZE 256
-#define WRITE_SIZE 256
-#define WIDTH 2
-#define RATE 16000
-
-const int PLAY = BIT0;
-const int STREAM = BIT1;
-
-uint8_t micdata[READ_SIZE * WIDTH];
-struct wavfile_header {
-    char riff_tag[4];       // 4
-    int riff_length;        // 4
-    char wave_tag[4];       // 4
-    char fmt_tag[4];        // 4
-    int fmt_length;         // 4
-    short audio_format;     // 2
-    short num_channels;     // 2
-    int sample_rate;        // 4
-    int byte_rate;          // 4
-    short block_align;      // 2
-    short bits_per_sample;  // 2
-    char data_tag[4];       // 4
-    int data_length;        // 4
-};
-struct wavfile_header header;
-std::string finishedMsg = "";
-int retryCount = 0;
-int I2SMode = -1;
-std::string audioFrameTopic = std::string("hermes/audioServer/") + SITEID + std::string("/audioFrame");
-std::string playBytesTopic = std::string("hermes/audioServer/") + SITEID + std::string("/playBytes/#");
-std::string hotwordTopic = "hermes/hotword/#";
-std::string debugTopic = SITEID + std::string("/debug");
-AsyncMqttClient asyncClient; 
-WiFiClient net;
-PubSubClient audioServer(net); 
-RingBuf<uint8_t, 1024 * 6> audioData;
-long message_size = 0;
-static EventGroupHandle_t audioGroup;
-
-struct WifiDisconnected;
-struct MQTTDisconnected;
-struct HotwordDetected;
-struct StreamAudio;
-struct PlayAudio;
-
-struct WifiDisconnectEvent : tinyfsm::Event { };
-struct WifiConnectEvent : tinyfsm::Event { };
-struct MQTTDisconnectedEvent : tinyfsm::Event { };
-struct MQTTConnectedEvent : tinyfsm::Event { };
-struct StreamAudioEvent : tinyfsm::Event { };
-struct PlayAudioEvent : tinyfsm::Event { };
-struct HotwordDetectedEvent : tinyfsm::Event { };
-
-void onMqttConnect(bool sessionPresent);
-void onMqttDisconnect(AsyncMqttClientDisconnectReason reason);
-void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total);
-void publishDebug(const char* message);
-void InitI2SSpeakerOrMic(int mode);
-void WiFiEvent(WiFiEvent_t event);
-void initHeader();
-void I2Stask(void *p);
+#include "header.h"
 
 class StateMachine
 : public tinyfsm::Fsm<StateMachine>
@@ -327,12 +257,17 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
       std::vector<std::string> topicparts = explode("/", topicstr);
       finishedMsg = "{\"id\":\"" + topicparts[4] + "\",\"siteId\":\"" + SITEID + "\",\"sessionId\":null}";
       for (int i = 0; i < len; i++) {
-        while (!audioData.push((uint8_t)payload[i])) {
-          delay(1);
+        while (audioData.isFull()) {
+          if (xEventGroupGetBits(audioGroup) != PLAY) {
+            send_event(PlayAudioEvent());
+          }
+          vTaskDelay(10 / portTICK_PERIOD_MS);
         }
-        if (audioData.isFull()) {
-          send_event(PlayAudioEvent());
-        }
+        audioData.push((uint8_t)payload[i]);
+      }
+      //At the end, make sure to start play incase the buffer is not full yet
+      if (!audioData.isEmpty() && xEventGroupGetBits(audioGroup) != PLAY) {
+        send_event(PlayAudioEvent());
       }
     }
   } else {
@@ -340,20 +275,40 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
     if (topicstr.find("playBytes") != std::string::npos) {
       if (index == 0) {
         message_size = total;
-        for (int i = 0; i < len; i++) {
+        audioData.clear();
+        for (int i = 0; i < 44; i++) {
           audioData.push((uint8_t)payload[i]);
-          if (audioData.isFull()) {
-            send_event(PlayAudioEvent());
+        }
+        for (int k = 0; k < 44; k++) {
+            audioData.pop(WaveData[k]);
+        }
+        XT_Wav_Class Message((const uint8_t *)WaveData);
+        Serial.printf("Samplerate: %d, Channels: %d, Format: %d, Bits per Sample: %d\n", (int)Message.SampleRate, (int)Message.NumChannels, (int)Message.Format, (int)Message.BitsPerSample);
+        sampleRate = (int)Message.SampleRate;
+        numChannels = (int)Message.NumChannels;
+        bitDepth = (int)Message.BitsPerSample;
+        queueDelay = ((int)Message.SampleRate * (int)Message.NumChannels * (int)Message.BitsPerSample) /  1000;
+        //delay *= 2;
+        //Serial.printf("Delay %d\n", (int)queueDelay);
+        for (int i = 44; i < len; i++) {
+          while (audioData.isFull()) {
+            if (xEventGroupGetBits(audioGroup) != PLAY) {
+              Serial.println("PlayAudioEvent");
+              send_event(PlayAudioEvent());
+            }
+            vTaskDelay(10 / portTICK_PERIOD_MS);
           }
+          audioData.push((uint8_t)payload[i]);
         }
       } else {
         for (int i = 0; i < len; i++) {
-          while (!audioData.push((uint8_t)payload[i])) {
-              delay(1);
+          while (audioData.isFull()) {
+            if (xEventGroupGetBits(audioGroup) != PLAY) {
+              send_event(PlayAudioEvent());
+            }
+            vTaskDelay(10 / portTICK_PERIOD_MS);
           }
-          if (audioData.isFull()) {
-            send_event(PlayAudioEvent());
-          }
+          audioData.push((uint8_t)payload[i]);
         }
       }
     }
@@ -369,46 +324,51 @@ void publishDebug(const char* message) {
 void I2Stask(void *p) {
   while (1) {
     if (xEventGroupGetBitsFromISR(audioGroup) == PLAY) {
+      size_t bytes_written;
+      boolean timeout = false;
+      int played = 44;
+      //long now = millis();
+      //long lastBytesPlayed = millis();
+      
       if (I2SMode != MODE_SPK) {
         InitI2SSpeakerOrMic(MODE_SPK);
         I2SMode = MODE_SPK;
       }
-      size_t bytes_written;
-      boolean timeout = false;
-      int played = 0;
-      long now = millis();
-      long lastBytesPlayed = millis();
-      uint8_t WaveData[44];
-      for (int k = 0; k < 44; k++) {
-          audioData.pop(WaveData[k]);
-          played++;
+
+      if (sampleRate > 0) {
+        i2s_set_clk(SPEAKER_I2S_NUMBER, sampleRate, static_cast<i2s_bits_per_sample_t>(bitDepth), static_cast<i2s_channel_t>(numChannels));
       }
+
       while (played < message_size && timeout == false) {
           int bytes_to_read = WRITE_SIZE;
           if (message_size - played < WRITE_SIZE) {
               bytes_to_read = message_size - played;
           }
           uint8_t data[bytes_to_read];
-          while (audioData.size() < bytes_to_read && played < message_size && timeout == false) {
-              vTaskDelay(1);
-              now = millis();
-              if (now - lastBytesPlayed > 1000) {
-                  //force exit
-                Serial.printf("Exit timeout, audioData.size : %d, bytes_to_read: %d, played: %d, message_size: %d\n",(int)audioData.size(), (int)bytes_to_read, (int)played, (int)message_size);
-                timeout = true;
-              }
-          }
-          lastBytesPlayed = millis();
+          // while (audioData.size() < bytes_to_read && played < message_size && bytes_to_read >= WRITE_SIZE && timeout == false) {
+          //   Serial.println("Delayed output");
+          //   vTaskDelay(20 / portTICK_PERIOD_MS);
+          //   now = millis();
+          //   if (now - lastBytesPlayed > 500) {
+          //       //force exit
+          //     Serial.printf("Exit timeout, audioData.size : %d, bytes_to_read: %d, played: %d, message_size: %d\n",(int)audioData.size(), (int)bytes_to_read, (int)played, (int)message_size);
+          //     timeout = true;
+          //   }
+          // }
+          //lastBytesPlayed = millis();
 
           if (!timeout) {
             for (int i = 0; i < bytes_to_read; i++) {
-                audioData.pop(data[i]);
+              if (!audioData.pop(data[i])) {
+                data[i] = 0;
+                Serial.println("Buffer underflow");
+              }
             }
             played = played + bytes_to_read;
             i2s_write(SPEAKER_I2S_NUMBER, data, sizeof(data), &bytes_written, portMAX_DELAY);
-            //if (bytes_written < bytes_to_read) {
-              Serial.printf("Bytes written %d\n",bytes_written);
-            //}
+            if (bytes_written != bytes_to_read) {
+              Serial.printf("Bytes to read %d, but bytes written %d\n",bytes_to_read,bytes_written);
+            }
           }
       }
       audioData.clear();
