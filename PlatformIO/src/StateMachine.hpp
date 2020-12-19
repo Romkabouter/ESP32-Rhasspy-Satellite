@@ -345,18 +345,6 @@ void I2Stask(void *p) {
               bytes_to_read = message_size - played;
           }
           uint8_t data[bytes_to_read];
-          // while (audioData.size() < bytes_to_read && played < message_size && bytes_to_read >= WRITE_SIZE && timeout == false) {
-          //   Serial.println("Delayed output");
-          //   vTaskDelay(20 / portTICK_PERIOD_MS);
-          //   now = millis();
-          //   if (now - lastBytesPlayed > 500) {
-          //       //force exit
-          //     Serial.printf("Exit timeout, audioData.size : %d, bytes_to_read: %d, played: %d, message_size: %d\n",(int)audioData.size(), (int)bytes_to_read, (int)played, (int)message_size);
-          //     timeout = true;
-          //   }
-          // }
-          //lastBytesPlayed = millis();
-
           if (!timeout) {
             for (int i = 0; i < bytes_to_read; i++) {
               if (!audioData.pop(data[i])) {
