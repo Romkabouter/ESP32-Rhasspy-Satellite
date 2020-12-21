@@ -108,8 +108,14 @@ class MQTTConnected : public StateMachine {
 };
 
 class MQTTDisconnected : public StateMachine {
+
+  private:
+  long currentMillis, startMillis;
+
   void entry(void) override {
     Serial.println("Enter MQTTDisconnected");
+    startMillis = millis();
+    currentMillis = millis();
     if (audioServer.connected()) {
       audioServer.disconnect();
     }    
@@ -119,18 +125,23 @@ class MQTTDisconnected : public StateMachine {
     asyncClient.setClientId(SITEID);
     asyncClient.setServer(MQTT_HOST, MQTT_PORT);
     asyncClient.setCredentials(MQTT_USER, MQTT_PASS);
-    asyncClient.connect();
-    asyncClient.onDisconnect(onMqttDisconnect);
     asyncClient.onMessage(onMqttMessage);
     audioServer.setServer(MQTT_HOST, MQTT_PORT);
     char clientID[100];
     sprintf(clientID, "%sAudio", SITEID);
+    asyncClient.connect();
     audioServer.connect(clientID, MQTT_USER, MQTT_PASS);
   }
 
   void run(void) override {
     if (audioServer.connected() && asyncClient.connected()) {
       transit<MQTTConnected>();
+    } else {
+      currentMillis = millis();
+      if (currentMillis - startMillis > 5000) {
+        Serial.printf("Connect failed after %d, retry\n",(int)currentMillis - startMillis);
+        transit<MQTTDisconnected>();
+      }      
     }
   }
 
@@ -231,10 +242,6 @@ std::vector<std::string> explode( const std::string &delimiter, const std::strin
     }
     arr.push_back(  str.substr(k, i-k) );
     return arr;
-}
-
-void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
-  send_event(MQTTDisconnectedEvent());
 }
 
 void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) {
