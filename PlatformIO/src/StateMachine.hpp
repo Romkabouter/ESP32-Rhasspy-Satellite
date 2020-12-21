@@ -1,10 +1,7 @@
 #include <tinyfsm.hpp>
-#include "M5Atom.h"
-#include <driver/i2s.h>
 #include <AsyncMqttClient.h>
 #include <PubSubClient.h>
 #include "RingBuf.h"
-#include "header.h"
 
 class StateMachine
 : public tinyfsm::Fsm<StateMachine>
@@ -27,7 +24,7 @@ class HotwordDetected : public StateMachine
 {
   void entry(void) override {
     Serial.println("Enter HotwordDetected");
-    M5.dis.drawpix(0, CRGB(0xFF0000));
+    device->updateLeds(COLORS_HOTWORD);
     xEventGroupClearBits(audioGroup, PLAY);
     xEventGroupSetBits(audioGroup, STREAM);
     initHeader();
@@ -68,7 +65,7 @@ class StreamAudio : public StateMachine
 {
   void entry(void) override {
     Serial.println("Enter StreamAudio");
-    M5.dis.drawpix(0, CRGB(0x0000FF)); 
+    device->updateLeds(COLORS_STREAM);
     xEventGroupClearBits(audioGroup, PLAY);
     xEventGroupSetBits(audioGroup, STREAM);
     initHeader();
@@ -126,7 +123,9 @@ class MQTTDisconnected : public StateMachine {
     asyncClient.onDisconnect(onMqttDisconnect);
     asyncClient.onMessage(onMqttMessage);
     audioServer.setServer(MQTT_HOST, MQTT_PORT);
-    audioServer.connect("MatrixVoiceAudio", MQTT_USER, MQTT_PASS);
+    char clientID[100];
+    sprintf(clientID, "%sAudio", SITEID);
+    audioServer.connect(clientID, MQTT_USER, MQTT_PASS);
   }
 
   void run(void) override {
@@ -149,7 +148,7 @@ class WifiConnected : public StateMachine
   void entry(void) override {
     Serial.println("Enter WifiConnected");
     Serial.println("Connected to Wifi with IP: " + WiFi.localIP().toString());
-    M5.dis.drawpix(0, CRGB(0x0000FF));
+    device->updateLeds(COLORS_WIFI_CONNECTED);
     ArduinoOTA.begin();
     transit<MQTTDisconnected>();
   }
@@ -171,8 +170,8 @@ class WifiDisconnected : public StateMachine
     xTaskCreatePinnedToCore(I2Stask, "I2Stask", 30000, NULL, 1, NULL, 1);
     Serial.println("Enter WifiDisconnected");
     Serial.printf("Total heap: %d\n", ESP.getHeapSize());
-    Serial.printf("Free heap: %d\n", ESP.getFreeHeap());    
-    M5.dis.drawpix(0, CRGB(0x00FF00));
+    Serial.printf("Free heap: %d\n", ESP.getFreeHeap());
+    device->updateLeds(COLORS_WIFI_DISCONNECTED);
     WiFi.onEvent(WiFiEvent);
 
     WiFi.mode(WIFI_STA);
@@ -323,21 +322,12 @@ void publishDebug(const char* message) {
 
 void I2Stask(void *p) {
   while (1) {
-    if (xEventGroupGetBitsFromISR(audioGroup) == PLAY) {
+    if (xEventGroupGetBits(audioGroup) == PLAY) {
       size_t bytes_written;
       boolean timeout = false;
       int played = 44;
-      //long now = millis();
-      //long lastBytesPlayed = millis();
-      
-      if (I2SMode != MODE_SPK) {
-        InitI2SSpeakerOrMic(MODE_SPK);
-        I2SMode = MODE_SPK;
-      }
 
-      if (sampleRate > 0) {
-        i2s_set_clk(SPEAKER_I2S_NUMBER, sampleRate, static_cast<i2s_bits_per_sample_t>(bitDepth), static_cast<i2s_channel_t>(numChannels));
-      }
+      device->setWriteMode(sampleRate, bitDepth, numChannels);
 
       while (played < message_size && timeout == false) {
           int bytes_to_read = WRITE_SIZE;
@@ -353,26 +343,23 @@ void I2Stask(void *p) {
               }
             }
             played = played + bytes_to_read;
-            i2s_write(SPEAKER_I2S_NUMBER, data, sizeof(data), &bytes_written, portMAX_DELAY);
+            device->writeAudio(data, bytes_to_read, &bytes_written);
             if (bytes_written != bytes_to_read) {
-              Serial.printf("Bytes to read %d, but bytes written %d\n",bytes_to_read,bytes_written);
+              Serial.printf("Bytes to write %d, but bytes written %d\n",bytes_to_read,bytes_written);
             }
           }
       }
       audioData.clear();
       xEventGroupClearBits(audioGroup, PLAY);
       send_event(StreamAudioEvent());
-    } else if (xEventGroupGetBitsFromISR(audioGroup) == STREAM) {
-      if (I2SMode != MODE_MIC) {
-        InitI2SSpeakerOrMic(MODE_MIC);
-        I2SMode = MODE_MIC;
-      }
-      size_t byte_read;
+    } else if (xEventGroupGetBits(audioGroup) == STREAM) {
+      device->setReadMode();
+      uint8_t data[READ_SIZE * WIDTH];
       if (audioServer.connected()) {
-        i2s_read(SPEAKER_I2S_NUMBER, (char *)(micdata), READ_SIZE * WIDTH, &byte_read, (100 / portTICK_RATE_MS));
+        device->readAudio(data, READ_SIZE * WIDTH);
         uint8_t payload[sizeof(header) + (READ_SIZE * WIDTH)];
         memcpy(payload, &header, sizeof(header));
-        memcpy(&payload[sizeof(header)], micdata,sizeof(micdata));
+        memcpy(&payload[sizeof(header)], data,sizeof(data));
         audioServer.publish(audioFrameTopic.c_str(),(uint8_t *)payload, sizeof(payload));
       } else {
         xEventGroupClearBits(audioGroup, STREAM);
@@ -398,46 +385,6 @@ void initHeader() {
     header.block_align = WIDTH;
     header.bits_per_sample = WIDTH * 8;
     header.data_length = READ_SIZE * WIDTH;
-}
-
-void InitI2SSpeakerOrMic(int mode)
-{
-    esp_err_t err = ESP_OK;
-
-    i2s_driver_uninstall(SPEAKER_I2S_NUMBER);
-    i2s_config_t i2s_config = {
-        .mode = (i2s_mode_t)(I2S_MODE_MASTER),
-        .sample_rate = RATE,
-        .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT, // is fixed at 12bit, stereo, MSB
-        .channel_format = I2S_CHANNEL_FMT_ALL_RIGHT,
-        .communication_format = I2S_COMM_FORMAT_I2S,
-        .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
-        .dma_buf_count = 6,
-        .dma_buf_len = 60,
-    };
-    if (mode == MODE_MIC)
-    {
-        i2s_config.mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX | I2S_MODE_PDM);
-    }
-    else
-    {
-        i2s_config.mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX);
-        i2s_config.use_apll = false;
-        i2s_config.tx_desc_auto_clear = true;
-    }
-
-    err += i2s_driver_install(SPEAKER_I2S_NUMBER, &i2s_config, 0, NULL);
-    i2s_pin_config_t tx_pin_config;
-
-    tx_pin_config.bck_io_num = CONFIG_I2S_BCK_PIN;
-    tx_pin_config.ws_io_num = CONFIG_I2S_LRCK_PIN;
-    tx_pin_config.data_out_num = CONFIG_I2S_DATA_PIN;
-    tx_pin_config.data_in_num = CONFIG_I2S_DATA_IN_PIN;
-
-    err += i2s_set_pin(SPEAKER_I2S_NUMBER, &tx_pin_config);
-    err += i2s_set_clk(SPEAKER_I2S_NUMBER, RATE, I2S_BITS_PER_SAMPLE_16BIT, I2S_CHANNEL_MONO);
-
-    return;
 }
 
 void WiFiEvent(WiFiEvent_t event) {

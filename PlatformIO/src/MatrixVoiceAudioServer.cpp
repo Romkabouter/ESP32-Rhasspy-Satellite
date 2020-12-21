@@ -75,13 +75,19 @@
 #include <Arduino.h>
 #include <ArduinoOTA.h>
 #include <WiFi.h>
+#include "header.h"
+
+// This is where you can include your device
+#include "M5AtomEcho.hpp"
+M5AtomEcho *device = new M5AtomEcho();
+// Create a device before include of StateMachine
+
 #include <StateMachine.hpp>
-#include "M5Atom.h"
 
 void setup() {
   Serial.begin(115200);
   Serial.println("Booting");
-  M5.begin(true,true,true);
+  device->init();
   // ---------------------------------------------------------------------------
   // ArduinoOTA
   // ---------------------------------------------------------------------------

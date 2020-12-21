@@ -5,15 +5,6 @@
 #include <PubSubClient.h>
 #include "RingBuf.h"
 
-#define CONFIG_I2S_BCK_PIN 19
-#define CONFIG_I2S_LRCK_PIN 33
-#define CONFIG_I2S_DATA_PIN 22
-#define CONFIG_I2S_DATA_IN_PIN 23
-
-#define SPEAKER_I2S_NUMBER I2S_NUM_0
-
-#define MODE_MIC 0
-#define MODE_SPK 1
 #define READ_SIZE 256
 #define WRITE_SIZE 256
 #define WIDTH 2
@@ -22,7 +13,6 @@
 const int PLAY = BIT0;
 const int STREAM = BIT1;
 
-uint8_t micdata[READ_SIZE * WIDTH];
 struct wavfile_header {
     char riff_tag[4];       // 4
     int riff_length;        // 4
