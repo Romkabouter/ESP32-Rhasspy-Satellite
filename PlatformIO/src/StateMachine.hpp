@@ -111,6 +111,7 @@ class MQTTDisconnected : public StateMachine {
 
   private:
   long currentMillis, startMillis;
+  bool mqttInitialized = false;
 
   void entry(void) override {
     Serial.println("Enter MQTTDisconnected");
@@ -122,11 +123,14 @@ class MQTTDisconnected : public StateMachine {
     if (asyncClient.connected()) {
       asyncClient.disconnect();
     }
-    asyncClient.setClientId(SITEID);
-    asyncClient.setServer(MQTT_HOST, MQTT_PORT);
-    asyncClient.setCredentials(MQTT_USER, MQTT_PASS);
-    asyncClient.onMessage(onMqttMessage);
-    audioServer.setServer(MQTT_HOST, MQTT_PORT);
+    if (!mqttInitialized) {
+      asyncClient.onMessage(onMqttMessage);
+      asyncClient.setClientId(SITEID);
+      asyncClient.setServer(MQTT_HOST, MQTT_PORT);
+      asyncClient.setCredentials(MQTT_USER, MQTT_PASS);
+      audioServer.setServer(MQTT_HOST, MQTT_PORT);
+      mqttInitialized = true;
+    }
     char clientID[100];
     sprintf(clientID, "%sAudio", SITEID);
     asyncClient.connect();
@@ -139,7 +143,7 @@ class MQTTDisconnected : public StateMachine {
     } else {
       currentMillis = millis();
       if (currentMillis - startMillis > 5000) {
-        Serial.printf("Connect failed after %d, retry\n",(int)currentMillis - startMillis);
+        Serial.println("Connect failed, retry");
         transit<MQTTDisconnected>();
       }      
     }
