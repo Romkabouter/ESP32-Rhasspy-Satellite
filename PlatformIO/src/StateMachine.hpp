@@ -12,6 +12,7 @@ public:
   virtual void react(MQTTConnectedEvent const &) {};
   virtual void react(MQTTDisconnectedEvent const &) {};
   virtual void react(StreamAudioEvent const &) {};
+  virtual void react(IdleEvent const &) {};
   virtual void react(PlayAudioEvent const &) {};
   virtual void react(HotwordDetectedEvent const &) {};
 
@@ -24,51 +25,49 @@ class HotwordDetected : public StateMachine
 {
   void entry(void) override {
     Serial.println("Enter HotwordDetected");
-    device->updateLeds(COLORS_HOTWORD);
+    device->updateBrightness(config.hotword_brightness);
+    device->updateColors(COLORS_HOTWORD);
     xEventGroupClearBits(audioGroup, PLAY);
     xEventGroupSetBits(audioGroup, STREAM);
     initHeader();
   }
 
   void react(StreamAudioEvent const &) override { 
-    transit<StreamAudio>();
-  };
-
-  void react(WifiDisconnectEvent const &) override { 
-    transit<WifiDisconnected>();
+    xEventGroupClearBits(audioGroup, PLAY);
+    xEventGroupSetBits(audioGroup, STREAM);
   };
 
   void react(PlayAudioEvent const &) override { 
-    transit<PlayAudio>();
-  };
-};
-
-class PlayAudio : public StateMachine
-{
-  void entry(void) override {
-    Serial.println("Enter PlayAudio");
-    //Set the taskbits to play the audiobuffer
     xEventGroupClearBits(audioGroup, STREAM);
     xEventGroupSetBits(audioGroup, PLAY);
+  };
+
+  void react(IdleEvent const &) override { 
+    transit<Idle>();
   }
 
   void react(WifiDisconnectEvent const &) override { 
     transit<WifiDisconnected>();
   };
-
-  void react(StreamAudioEvent const &) override { 
-    transit<StreamAudio>();
-  };
 };
 
-class StreamAudio : public StateMachine
+class Idle : public StateMachine
 {
   void entry(void) override {
-    Serial.println("Enter StreamAudio");
-    device->updateLeds(COLORS_STREAM);
+    Serial.println("Enter Idle");
+    device->updateBrightness(config.brightness);
+    device->updateColors(COLORS_IDLE);
     xEventGroupClearBits(audioGroup, PLAY);
     xEventGroupSetBits(audioGroup, STREAM);
     initHeader();
+  }
+
+  void run(void) override {
+    if (device->isHotwordDetected()) {
+      //start session by publishing a message to hermes/dialogueManager/startSession
+      std::string message = "{\"init\":{\"type\":\"action\",\"canBeEnqueued\": false},\"siteId\":\"" + std::string(SITEID) + "\"}";
+      asyncClient.publish("hermes/dialogueManager/startSession", 0, false, message.c_str());
+    }
   }
 
   void react(WifiDisconnectEvent const &) override { 
@@ -83,8 +82,14 @@ class StreamAudio : public StateMachine
     transit<HotwordDetected>();
   }
 
+  void react(StreamAudioEvent const &) override { 
+    xEventGroupClearBits(audioGroup, PLAY);
+    xEventGroupSetBits(audioGroup, STREAM);
+  };
+
   void react(PlayAudioEvent const &) override { 
-    transit<PlayAudio>();
+    xEventGroupClearBits(audioGroup, STREAM);
+    xEventGroupSetBits(audioGroup, PLAY);
   };
 
 };
@@ -93,9 +98,14 @@ class MQTTConnected : public StateMachine {
   void entry(void) override {
     Serial.println("Enter MQTTConnected");
     Serial.printf("Connected as %s\n",SITEID);
+    publishDebug("Connected to asynch MQTT!");
     asyncClient.subscribe(playBytesTopic.c_str(), 0);
     asyncClient.subscribe(hotwordTopic.c_str(), 0);
-    transit<StreamAudio>();
+    asyncClient.subscribe(audioTopic.c_str(), 0);
+    asyncClient.subscribe(debugTopic.c_str(), 0);
+    asyncClient.subscribe(ledTopic.c_str(), 0);
+    asyncClient.subscribe(restartTopic.c_str(), 0);
+    transit<Idle>();
   }
 
   void react(MQTTDisconnectedEvent const &) override { 
@@ -111,7 +121,6 @@ class MQTTDisconnected : public StateMachine {
 
   private:
   long currentMillis, startMillis;
-  bool mqttInitialized = false;
 
   void entry(void) override {
     Serial.println("Enter MQTTDisconnected");
@@ -125,12 +134,12 @@ class MQTTDisconnected : public StateMachine {
     }
     if (!mqttInitialized) {
       asyncClient.onMessage(onMqttMessage);
-      asyncClient.setClientId(SITEID);
-      asyncClient.setServer(MQTT_HOST, MQTT_PORT);
-      asyncClient.setCredentials(MQTT_USER, MQTT_PASS);
-      audioServer.setServer(MQTT_HOST, MQTT_PORT);
       mqttInitialized = true;
     }
+    asyncClient.setClientId(SITEID);
+    asyncClient.setServer(config.mqtt_host, config.mqtt_port);
+    asyncClient.setCredentials(MQTT_USER, MQTT_PASS);
+    audioServer.setServer(config.mqtt_host, config.mqtt_port);
     char clientID[100];
     sprintf(clientID, "%sAudio", SITEID);
     asyncClient.connect();
@@ -163,7 +172,8 @@ class WifiConnected : public StateMachine
   void entry(void) override {
     Serial.println("Enter WifiConnected");
     Serial.println("Connected to Wifi with IP: " + WiFi.localIP().toString());
-    device->updateLeds(COLORS_WIFI_CONNECTED);
+    device->updateBrightness(config.brightness);
+    device->updateColors(COLORS_WIFI_CONNECTED);
     ArduinoOTA.begin();
     transit<MQTTDisconnected>();
   }
@@ -180,15 +190,17 @@ class WifiDisconnected : public StateMachine
     if (!audioGroup) {
       audioGroup = xEventGroupCreate();
     }
+    //Mute initial output
+    device->muteOutput(true);
     xEventGroupClearBits(audioGroup, STREAM);
     xEventGroupClearBits(audioGroup, PLAY);
     xTaskCreatePinnedToCore(I2Stask, "I2Stask", 30000, NULL, 1, NULL, 1);
     Serial.println("Enter WifiDisconnected");
     Serial.printf("Total heap: %d\n", ESP.getHeapSize());
     Serial.printf("Free heap: %d\n", ESP.getFreeHeap());
-    device->updateLeds(COLORS_WIFI_DISCONNECTED);
+    device->updateBrightness(config.brightness);
+    device->updateColors(COLORS_WIFI_DISCONNECTED);
     WiFi.onEvent(WiFiEvent);
-
     WiFi.mode(WIFI_STA);
     WiFi.begin(WIFI_SSID, WIFI_PASS);
     while (WiFi.waitForConnectResult() != WL_CONNECTED) {
@@ -252,17 +264,31 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
   std::string topicstr(topic);
   if (len + index == total) {
     if (topicstr.find("toggleOff") != std::string::npos) {
-        std::string payloadstr(payload);
-        // Check if this is for us
-        if (payloadstr.find(SITEID) != std::string::npos) {
-          send_event(HotwordDetectedEvent());
+      std::string payloadstr(payload);
+      StaticJsonDocument<300> doc;
+      DeserializationError err = deserializeJson(doc, payloadstr.c_str());
+      // Check if this is for us
+      if (!err) {
+        JsonObject root = doc.as<JsonObject>();
+        if (root["siteId"] == SITEID 
+          && root.containsKey("reason")
+          && root["reason"] == "dialogueSession") {
+            send_event(HotwordDetectedEvent());
         }
+      }
     } else if (topicstr.find("toggleOn") != std::string::npos) {
-        // Check if this is for us
-        std::string payloadstr(payload);
-        if (payloadstr.find(SITEID) != std::string::npos) {  
-          send_event(StreamAudioEvent());
-        }
+      std::string payloadstr(payload);
+      StaticJsonDocument<300> doc;
+      DeserializationError err = deserializeJson(doc, payloadstr.c_str());
+      // Check if this is for us
+      if (!err) {
+        JsonObject root = doc.as<JsonObject>();
+        if (root["siteId"] == SITEID 
+          && root.containsKey("reason")
+          && root["reason"] == "dialogueSession") {
+            send_event(IdleEvent());
+          }
+      }
     } else if (topicstr.find("playBytes") != std::string::npos) {
       std::vector<std::string> topicparts = explode("/", topicstr);
       finishedMsg = "{\"id\":\"" + topicparts[4] + "\",\"siteId\":\"" + SITEID + "\",\"sessionId\":null}";
@@ -278,6 +304,110 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
       //At the end, make sure to start play incase the buffer is not full yet
       if (!audioData.isEmpty() && xEventGroupGetBits(audioGroup) != PLAY) {
         send_event(PlayAudioEvent());
+      }
+    } else if (topicstr.find(ledTopic.c_str()) != std::string::npos) {
+      std::string payloadstr(payload);
+      StaticJsonDocument<300> doc;
+      bool saveNeeded = false;
+      DeserializationError err = deserializeJson(doc, payloadstr.c_str());
+      if (!err) {
+        JsonObject root = doc.as<JsonObject>();
+        if (root.containsKey("brightness")) {
+          if (config.brightness != (int)root["brightness"]) {
+            config.brightness = (int)(root["brightness"]);
+            saveNeeded = true;
+          }
+        }
+        if (root.containsKey("hotword_brightness")) {
+          config.hotword_brightness = (int)(root["hotword_brightness"]);
+        }
+        if (root.containsKey("hotword")) {
+          hotword_colors[0] = root["hotword"][0];
+          hotword_colors[1] = root["hotword"][1];
+          hotword_colors[2] = root["hotword"][2];
+          hotword_colors[3] = root["hotword"][3];
+        }
+        if (root.containsKey("idle")) {
+          idle_colors[0] = root["idle"][0];
+          idle_colors[1] = root["idle"][1];
+          idle_colors[2] = root["idle"][2];
+          idle_colors[3] = root["idle"][3];
+        }
+        if (root.containsKey("wifi_disconnect")) {
+          wifi_disc_colors[0] = root["wifi_disconnect"][0];
+          wifi_disc_colors[1] = root["wifi_disconnect"][1];
+          wifi_disc_colors[2] = root["wifi_disconnect"][2];
+          wifi_disc_colors[3] = root["wifi_disconnect"][3];
+        }
+        if (root.containsKey("wifi_connect")) {
+          wifi_conn_colors[0] = root["wifi_connect"][0];
+          wifi_conn_colors[1] = root["wifi_connect"][1];
+          wifi_conn_colors[2] = root["wifi_connect"][2];
+          wifi_conn_colors[3] = root["wifi_connect"][3];
+        }
+        if (root.containsKey("update")) {
+          ota_colors[0] = root["update"][0];
+          ota_colors[1] = root["update"][1];
+          ota_colors[2] = root["update"][2];
+          ota_colors[3] = root["update"][3];
+        }
+        if (saveNeeded) {
+          saveConfiguration(configfile, config);
+        }
+      } else {
+        publishDebug(err.c_str());
+      }
+    } else if (topicstr.find(audioTopic.c_str()) != std::string::npos) {
+      std::string payloadstr(payload);
+      StaticJsonDocument<300> doc;
+      DeserializationError err = deserializeJson(doc, payloadstr.c_str());
+      if (!err) {
+        JsonObject root = doc.as<JsonObject>();
+        if (root.containsKey("mute_input")) {
+          config.mute_input = (root["mute_input"] == "true") ? true : false;
+        }
+        if (root.containsKey("mute_output")) {
+          config.mute_output = (root["mute_output"] == "true") ? true : false;
+        }
+        if (root.containsKey("amp_output")) {
+            config.amp_output =  (root["amp_output"] == "0") ? AMP_OUT_SPEAKERS : AMP_OUT_HEADPHONE;
+        }
+        if (root.containsKey("gain")) {
+          config.gain = (int)root["gain"];
+        }
+        if (root.containsKey("volume")) {
+          config.volume = (uint16_t)root["volume"];
+        }
+        if (root.containsKey("hotword")) {
+          config.hotword_detection = (root["hotword"] == "local") ? HW_LOCAL : HW_REMOTE;
+        }
+        saveConfiguration(configfile, config);
+      } else {
+          publishDebug(err.c_str());
+      }
+    } else if (topicstr.find(restartTopic.c_str()) != std::string::npos) {
+      std::string payloadstr(payload);
+      StaticJsonDocument<300> doc;
+      DeserializationError err = deserializeJson(doc, payloadstr.c_str());
+      if (!err) {
+        JsonObject root = doc.as<JsonObject>();
+        if (root.containsKey("passwordhash")) {
+          if (root["passwordhash"] == OTA_PASS_HASH) {
+            ESP.restart();
+          }
+        }
+      } else {
+        publishDebug(err.c_str());
+      }
+    } else if (topicstr.find(debugTopic.c_str()) != std::string::npos) {
+      std::string payloadstr(payload);
+      StaticJsonDocument<300> doc;
+      DeserializationError err = deserializeJson(doc, payloadstr.c_str());
+      if (!err) {
+        JsonObject root = doc.as<JsonObject>();
+        if (root.containsKey("debug")) {
+          DEBUG = (root["debug"] == "true") ? true : false;
+        }
       }
     }
   } else {
@@ -325,12 +455,6 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
   }
 }
 
-void publishDebug(const char* message) {
-  if (true) {
-    audioServer.publish(debugTopic.c_str(), message);
-  }
-}
-
 void I2Stask(void *p) {
   while (1) {
     if (xEventGroupGetBits(audioGroup) == PLAY) {
@@ -341,37 +465,49 @@ void I2Stask(void *p) {
       device->setWriteMode(sampleRate, bitDepth, numChannels);
 
       while (played < message_size && timeout == false) {
-          int bytes_to_read = WRITE_SIZE;
-          if (message_size - played < WRITE_SIZE) {
-              bytes_to_read = message_size - played;
+          int bytes_to_write = device->writeSize;
+          if (message_size - played < device->writeSize) {
+              bytes_to_write = message_size - played;
           }
-          uint8_t data[bytes_to_read];
+          uint8_t data[bytes_to_write];
           if (!timeout) {
-            for (int i = 0; i < bytes_to_read; i++) {
+            for (int i = 0; i < bytes_to_write; i++) {
               if (!audioData.pop(data[i])) {
                 data[i] = 0;
                 Serial.println("Buffer underflow");
               }
             }
-            played = played + bytes_to_read;
-            device->writeAudio(data, bytes_to_read, &bytes_written);
-            if (bytes_written != bytes_to_read) {
-              Serial.printf("Bytes to write %d, but bytes written %d\n",bytes_to_read,bytes_written);
+            played = played + bytes_to_write;
+            if (!config.mute_output) {
+              device->muteOutput(false);
+              device->writeAudio(data, bytes_to_write, &bytes_written);
+            } else {
+              bytes_written = bytes_to_write;
+            }
+            if (bytes_written != bytes_to_write) {
+              Serial.printf("Bytes to write %d, but bytes written %d\n",bytes_to_write,bytes_written);
             }
           }
       }
+      asyncClient.publish(playFinishedTopic.c_str(), 0, false, finishedMsg.c_str());
+      device->muteOutput(true);
       audioData.clear();
-      xEventGroupClearBits(audioGroup, PLAY);
+      Serial.println("Done");
       send_event(StreamAudioEvent());
-    } else if (xEventGroupGetBits(audioGroup) == STREAM) {
+    }
+    if (xEventGroupGetBits(audioGroup) == STREAM && !config.mute_input) {
       device->setReadMode();
-      uint8_t data[READ_SIZE * WIDTH];
+      uint8_t data[device->readSize * device->width];
       if (audioServer.connected()) {
-        device->readAudio(data, READ_SIZE * WIDTH);
-        uint8_t payload[sizeof(header) + (READ_SIZE * WIDTH)];
-        memcpy(payload, &header, sizeof(header));
-        memcpy(&payload[sizeof(header)], data,sizeof(data));
-        audioServer.publish(audioFrameTopic.c_str(),(uint8_t *)payload, sizeof(payload));
+        if (device->readAudio(data, device->readSize * device->width)) {
+          uint8_t payload[sizeof(header) + (device->readSize * device->width)];
+          memcpy(payload, &header, sizeof(header));
+          memcpy(&payload[sizeof(header)], data,sizeof(data));
+          audioServer.publish(audioFrameTopic.c_str(),(uint8_t *)payload, sizeof(payload));
+        } else {
+          //Loop, because otherwise this causes timeouts
+          audioServer.loop();
+        }
       } else {
         xEventGroupClearBits(audioGroup, STREAM);
         send_event(MQTTDisconnectedEvent());
@@ -387,15 +523,15 @@ void initHeader() {
     strncpy(header.fmt_tag, "fmt ", 4);
     strncpy(header.data_tag, "data", 4);
 
-    header.riff_length = (uint32_t)sizeof(header) + (READ_SIZE * WIDTH);
+    header.riff_length = (uint32_t)sizeof(header) + (device->readSize * device->width);
     header.fmt_length = 16;
     header.audio_format = 1;
     header.num_channels = 1;
-    header.sample_rate = RATE;
-    header.byte_rate = RATE * WIDTH;
-    header.block_align = WIDTH;
-    header.bits_per_sample = WIDTH * 8;
-    header.data_length = READ_SIZE * WIDTH;
+    header.sample_rate = device->rate;
+    header.byte_rate = device->rate * device->width;
+    header.block_align = device->width;
+    header.bits_per_sample = device->width * 8;
+    header.data_length = device->readSize * device->width;
 }
 
 void WiFiEvent(WiFiEvent_t event) {

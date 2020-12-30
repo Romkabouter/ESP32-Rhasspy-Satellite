@@ -75,19 +75,43 @@
 #include <Arduino.h>
 #include <ArduinoOTA.h>
 #include <WiFi.h>
-#include "header.h"
 
-// This is where you can include your device
-#include "M5AtomEcho.hpp"
-M5AtomEcho *device = new M5AtomEcho();
-// Create a device before include of StateMachine
+#include "device.h"
 
+#define M5ATOMECHO 0
+#define MATRIXVOICE 1
+#define AUDIOKIT 2
+
+// This is where you can include your device, make sure to create a *device
+// The *device is used to call methods 
+#if DEVICE_TYPE == M5ATOMECHO
+  #include "devices/M5AtomEcho.hpp"
+  M5AtomEcho *device = new M5AtomEcho();
+#elif DEVICE_TYPE == MATRIXVOICE
+  #include "devices/MatrixVoice.hpp"
+  MatrixVoice *device = new MatrixVoice();
+#elif DEVICE_TYPE == AUDIOKIT
+  #include "devices/AudioKit.hpp"
+  AudioKit *device = new AudioKit();
+#endif
+
+#include <General.hpp>
 #include <StateMachine.hpp>
 
 void setup() {
   Serial.begin(115200);
   Serial.println("Booting");
   device->init();
+
+  if (!SPIFFS.begin(true)) {
+      Serial.println("Failed to mount file system");
+  } else {
+      Serial.println("Loading configuration");
+      loadConfiguration(configfile, config);
+  }
+
+  device->setGain(config.gain);
+
   // ---------------------------------------------------------------------------
   // ArduinoOTA
   // ---------------------------------------------------------------------------
@@ -118,6 +142,9 @@ void setup() {
     });
  
   fsm_list::start();
+
+  server.on("/", handleRequest);
+  server.begin();
 }
 
 void loop() {

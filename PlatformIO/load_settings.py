@@ -5,7 +5,7 @@ import hashlib
 from string import Template
 
 settings = "settings.ini"
-sectionMatrix = "Matrix"
+sectionGeneral = "General"
 sectionWifi = "Wifi"
 sectionOta = "OTA"
 sectionMqtt = "MQTT"
@@ -20,15 +20,15 @@ if os.path.isfile(settings):
         ("WIFI_SSID", "\\\"" + config[sectionWifi]["ssid"] + "\\\""),
         ("WIFI_PASS", "\\\"" + config[sectionWifi]["password"] + "\\\""),
         ("OTA_PASS_HASH", "\\\"" + otaPasswordHash + "\\\""),
-        ("SITEID", "\\\"" + config[sectionMatrix]["siteId"] + "\\\""),
-        ("HOSTNAME", "\\\"" + config[sectionMatrix]["hostname"] + "\\\""),
+        ("SITEID", "\\\"" + config[sectionGeneral]["siteId"] + "\\\""),
+        ("HOSTNAME", "\\\"" + config[sectionGeneral]["hostname"] + "\\\""),
         ("MQTT_IP", "IPAddress\(" + config[sectionMqtt]["ip"].replace(".", ",") + "\)"),
-        ("MQTT_HOST", "\\\"" + config[sectionMqtt]["hostname"] + "\\\""),
         ("MQTT_PORT", config[sectionMqtt]["port"]),
         ("MQTT_USER", "\\\"" + config[sectionMqtt]["username"] + "\\\""),
         ("MQTT_PASS", "\\\"" + config[sectionMqtt]["password"] + "\\\""),
-        ("MQTT_MAX_PACKET_SIZE", config[sectionMqtt]["maxPacketSize"]),
-        ("CONFIG_ASYNC_TCP_RUNNING_CORE", 0)
+        ("MQTT_MAX_PACKET_SIZE", 2000),
+        ("CONFIG_ASYNC_TCP_RUNNING_CORE", 0),
+        ("DEVICE_TYPE", config[sectionGeneral]["device_type"])
     ])
 
     if (config[sectionOta]["method"] == "upload") :
@@ -39,7 +39,7 @@ if os.path.isfile(settings):
     if (config[sectionOta]["method"] == "ota") :
         env.Replace(
             UPLOAD_PROTOCOL="espota",
-            UPLOAD_PORT=config[sectionMatrix]["hostname"],
+            UPLOAD_PORT=config[sectionGeneral]["hostname"],
             UPLOAD_FLAGS=[
                 "--port=" + config[sectionOta]["port"],
                 "--auth=" + config[sectionOta]["password"],

@@ -1,4 +1,3 @@
-#include "device.h"
 #include "M5Atom.h"
 #include <driver/i2s.h>
 
@@ -14,11 +13,13 @@ class M5AtomEcho : public Device
 public:
   M5AtomEcho();
   void init();
-  void updateLeds(int colors);
+  void updateColors(int colors);
+  void updateBrightness(int brightness);
   void setReadMode();
   void setWriteMode(int sampleRate, int bitDepth, int numChannels);
   void writeAudio(uint8_t *data, size_t size, size_t *bytes_written);
-  void readAudio(uint8_t *data, size_t size);
+  bool readAudio(uint8_t *data, size_t size);
+  bool isHotwordDetected();
 private:
   void InitI2SSpeakerOrMic(int mode);
 };
@@ -32,7 +33,12 @@ void M5AtomEcho::init()
   M5.begin(true,true,true);
 };
 
-void M5AtomEcho::updateLeds(int colors)
+bool M5AtomEcho::isHotwordDetected() {
+  M5.update();
+  return M5.Btn.isPressed();
+}
+
+void M5AtomEcho::updateColors(int colors)
 {
   switch (colors) {
     case COLORS_HOTWORD:
@@ -41,14 +47,21 @@ void M5AtomEcho::updateLeds(int colors)
     case COLORS_WIFI_CONNECTED:
       M5.dis.drawpix(0, CRGB(wifi_conn_colors[0],wifi_conn_colors[1],wifi_conn_colors[2]));
     break;
-    case COLORS_STREAM:
-      M5.dis.drawpix(0, CRGB(stream_colors[0],stream_colors[1],stream_colors[2]));
+    case COLORS_IDLE:
+      M5.dis.drawpix(0, CRGB(idle_colors[0],idle_colors[1],idle_colors[2]));
     break;
     case COLORS_WIFI_DISCONNECTED:
       M5.dis.drawpix(0, CRGB(wifi_disc_colors[1],wifi_disc_colors[0],wifi_disc_colors[2]));
     break;
+    case COLORS_OTA:
+      M5.dis.drawpix(0, CRGB(ota_colors[3],ota_colors[3],ota_colors[3]));
+    break;
   }
 };
+
+void M5AtomEcho::updateBrightness(int brightness) {
+  M5.dis.setBrightness(brightness);
+}
 
 void M5AtomEcho::InitI2SSpeakerOrMic(int mode)
 {
@@ -111,7 +124,8 @@ void M5AtomEcho::writeAudio(uint8_t *data, size_t size, size_t *bytes_written) {
   i2s_write(SPEAKER_I2S_NUMBER, data, size, bytes_written, portMAX_DELAY);
 }
 
-void M5AtomEcho::readAudio(uint8_t *data, size_t size) {
+bool M5AtomEcho::readAudio(uint8_t *data, size_t size) {
   size_t byte_read;
   i2s_read(SPEAKER_I2S_NUMBER, data, size, &byte_read, (100 / portTICK_RATE_MS));
+  return true;
 }
