@@ -53,8 +53,11 @@ class HotwordDetected : public StateMachine
 
 class Idle : public StateMachine
 {
+  bool hotwordDetected = false;
+
   void entry(void) override {
     Serial.println("Enter Idle");
+    hotwordDetected = false;
     device->updateBrightness(config.brightness);
     device->updateColors(COLORS_IDLE);
     xEventGroupClearBits(audioGroup, PLAY);
@@ -63,7 +66,8 @@ class Idle : public StateMachine
   }
 
   void run(void) override {
-    if (device->isHotwordDetected()) {
+    if (device->isHotwordDetected() && !hotwordDetected) {
+      hotwordDetected = true;
       //start session by publishing a message to hermes/dialogueManager/startSession
       std::string message = "{\"init\":{\"type\":\"action\",\"canBeEnqueued\": false},\"siteId\":\"" + std::string(SITEID) + "\"}";
       asyncClient.publish("hermes/dialogueManager/startSession", 0, false, message.c_str());

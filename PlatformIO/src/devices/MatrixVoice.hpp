@@ -56,7 +56,7 @@ public:
 private:
   matrix_hal::WishboneBus wb;
   matrix_hal::Everloop everloop;
-  matrix_hal::MicrophoneArray mics;
+//  matrix_hal::MicrophoneArray mics;
   matrix_hal::EverloopImage image1d;
   void playBytes(int16_t* input, uint32_t length);
 	void interleave(const int16_t * in_L, const int16_t * in_R, int16_t * out, const size_t num_samples);
@@ -75,12 +75,12 @@ void MatrixVoice::init()
   wb.Init();
   everloop.Setup(&wb);
   // setup mics
-  mics.Setup(&wb);
-  mics.SetSamplingRate(rate);  
+  // mics.Setup(&wb);
+  // mics.SetSamplingRate(rate);  
 
-  // Microphone Core Init
-  matrix_hal::MicrophoneCore mic_core(mics);
-  mic_core.Setup(&wb);  
+  // // Microphone Core Init
+  // matrix_hal::MicrophoneCore mic_core(mics);
+  // mic_core.Setup(&wb);  
 };
 
 void MatrixVoice::updateBrightness(int brightness) {
@@ -165,17 +165,18 @@ void MatrixVoice::setWriteMode(int sampleRate, int bitDepth, int numChannels) {
 }; 
 
 bool MatrixVoice::readAudio(uint8_t *data, size_t size) {
-	mics.Read();
-	//NumberOfSamples() = kMicarrayBufferSize / kMicrophoneChannels = 4069 / 8 = 512
-	uint16_t voicebuffer[readSize / 2];
-	uint8_t voicemapped[readSize];
-	for (uint32_t s = 0; s < readSize/2; s++) {
-	 	voicebuffer[s] = mics.Beam(s);
-	}
-	// voicebuffer will hold 256 samples of 2 bytes, but we need it as 1 byte We do a memcpy
-	memcpy(voicemapped, voicebuffer, readSize * width);
-	*data = *voicemapped;
-	return true;
+	return false;
+	// mics.Read();
+	// //NumberOfSamples() = kMicarrayBufferSize / kMicrophoneChannels = 4069 / 8 = 512
+	// uint16_t voicebuffer[readSize / 2];
+	// uint8_t voicemapped[readSize];
+	// for (uint32_t s = 0; s < readSize/2; s++) {
+	//  	voicebuffer[s] = mics.Beam(s);
+	// }
+	// // voicebuffer will hold 256 samples of 2 bytes, but we need it as 1 byte We do a memcpy
+	// memcpy(voicemapped, voicebuffer, readSize * width);
+	// *data = *voicemapped;
+	// return true;
 }
 
 void MatrixVoice::writeAudio(uint8_t *data, size_t size, size_t *bytes_written) {
