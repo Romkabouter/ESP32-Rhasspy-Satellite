@@ -23,8 +23,21 @@
 // LEDs
 #define LED_D4 GPIO_NUM_19
 #define LED_D5 GPIO_NUM_22
+// alias
 #define LED_WIFI LED_D5
 #define LED_STREAM LED_D4
+
+// Buttons
+#define KEY1_GPIO GPIO_NUM_36
+#define KEY2_GPIO GPIO_NUM_13
+#define KEY3_GPIO GPIO_NUM_19
+#define KEY4_GPIO GPIO_NUM_23
+#define KEY5_GPIO GPIO_NUM_18
+#define KEY6_GPIO GPIO_NUM_5
+// alias
+#define KEY_LISTEN KEY4_GPIO
+// #define KEY_VOL_UP KEY5_GPIO
+// #define KEY_VOL_DOWN KEY6_GPIO
 
 #define SPEAKER_I2S_NUMBER I2S_NUM_0
 
@@ -34,10 +47,24 @@ public:
     AudioKit();
     void init();
     void updateLeds(int colors);
+
     void setReadMode();
     void setWriteMode(int sampleRate, int bitDepth, int numChannels);
+
     void writeAudio(uint8_t *data, size_t size, size_t *bytes_written);
     bool readAudio(uint8_t *data, size_t size);
+
+    void muteOutput(bool mute);
+
+    // ESP-Audio-Kit has speaker and headphone as outputs
+    // TODO
+    // void ampOutput(int output) {};
+    void setVolume(uint16_t volume);
+
+    bool isHotwordDetected();
+
+    int readSize = 512;
+    int writeSize = 1024;
 
 private:
     void InitI2SSpeakerOrMic(int mode);
@@ -56,10 +83,6 @@ void AudioKit::init()
     }
     ac.SetMode(AC101::MODE_ADC_DAC);
 
-    uint8_t volume = 40;
-    ac.SetVolumeSpeaker(volume);
-    ac.SetVolumeHeadphone(volume);
-
     // LEDs
     pinMode(LED_STREAM, OUTPUT); // active low
     pinMode(LED_WIFI, OUTPUT);   // active low
@@ -68,26 +91,34 @@ void AudioKit::init()
 
     // Enable amplifier
     pinMode(GPIO_PA_EN, OUTPUT);
-    digitalWrite(GPIO_PA_EN, HIGH);
+
+    // Configure keys on ESP32 Audio Kit board
+    pinMode(KEY_LISTEN, INPUT_PULLUP);
+    // pinMode(KEY_VOL_UP, INPUT_PULLUP);
+    // pinMode(KEY_VOL_DOWN, INPUT_PULLUP);
 };
 
 void AudioKit::updateLeds(int colors)
 {
+    // turn off LEDs
     digitalWrite(LED_STREAM, HIGH);
     digitalWrite(LED_WIFI, HIGH);
 
     switch (colors)
     {
     case COLORS_HOTWORD:
+        digitalWrite(LED_STREAM, LOW);
         break;
     case COLORS_WIFI_CONNECTED:
-        digitalWrite(LED_WIFI, HIGH);
-        break;
-    case COLORS_IDLE:
-        digitalWrite(LED_STREAM, LOW);
+        // LED_WIFI is turned off already
         break;
     case COLORS_WIFI_DISCONNECTED:
         digitalWrite(LED_WIFI, LOW);
+        break;
+    case COLORS_IDLE:
+        // all LEDs are turned off already
+        break;
+    case COLORS_OTA:
         break;
     }
 };
@@ -164,4 +195,24 @@ bool AudioKit::readAudio(uint8_t *data, size_t size)
     size_t byte_read;
     i2s_read(SPEAKER_I2S_NUMBER, data, size, &byte_read, (100 / portTICK_RATE_MS));
     return true;
+}
+
+void AudioKit::muteOutput(bool mute)
+{
+    digitalWrite(GPIO_PA_EN, mute ? LOW : HIGH);
+}
+
+void AudioKit::setVolume(uint16_t volume)
+{
+    // volume is 0 to 100, needs to be 0 to 63
+    const uint8_t vol = (uint8_t)(volume / 100.0f * 63.0f);
+
+    ac.SetVolumeHeadphone(vol);
+    ac.SetVolumeSpeaker(vol);
+}
+
+bool AudioKit::isHotwordDetected()
+{
+    // TODOD debounce maybe?
+    return digitalRead(KEY_LISTEN) == LOW;
 }
