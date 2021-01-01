@@ -29,7 +29,7 @@ class HotwordDetected : public StateMachine
     device->updateColors(COLORS_HOTWORD);
     xEventGroupClearBits(audioGroup, PLAY);
     xEventGroupSetBits(audioGroup, STREAM);
-    initHeader();
+    initHeader(device->readSize, device->width, device->rate);
   }
 
   void react(StreamAudioEvent const &) override { 
@@ -62,7 +62,7 @@ class Idle : public StateMachine
     device->updateColors(COLORS_IDLE);
     xEventGroupClearBits(audioGroup, PLAY);
     xEventGroupSetBits(audioGroup, STREAM);
-    initHeader();
+    initHeader(device->readSize, device->width, device->rate);
   }
 
   void run(void) override {
@@ -101,7 +101,7 @@ class Idle : public StateMachine
 class MQTTConnected : public StateMachine {
   void entry(void) override {
     Serial.println("Enter MQTTConnected");
-    Serial.printf("Connected as %s\n",SITEID);
+    Serial.printf("Connected as %s\n\r",SITEID);
     publishDebug("Connected to asynch MQTT!");
     asyncClient.subscribe(playBytesTopic.c_str(), 0);
     asyncClient.subscribe(hotwordTopic.c_str(), 0);
@@ -198,10 +198,10 @@ class WifiDisconnected : public StateMachine
     device->muteOutput(true);
     xEventGroupClearBits(audioGroup, STREAM);
     xEventGroupClearBits(audioGroup, PLAY);
-    xTaskCreatePinnedToCore(I2Stask, "I2Stask", 30000, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(I2Stask, "I2Stask", 30000, (void*)device, 1, NULL, 1);
     Serial.println("Enter WifiDisconnected");
-    Serial.printf("Total heap: %d\n", ESP.getHeapSize());
-    Serial.printf("Free heap: %d\n", ESP.getFreeHeap());
+    Serial.printf("Total heap: %d\n\r", ESP.getHeapSize());
+    Serial.printf("Free heap: %d\n\r", ESP.getFreeHeap());
     device->updateBrightness(config.brightness);
     device->updateColors(COLORS_WIFI_DISCONNECTED);
     WiFi.onEvent(WiFiEvent);
@@ -225,12 +225,12 @@ class WifiDisconnected : public StateMachine
 
 FSM_INITIAL_STATE(StateMachine, WifiDisconnected)
 
-using fsm_list = tinyfsm::FsmList<StateMachine>;
+using fsm = tinyfsm::Fsm<StateMachine>;
 
 template<typename E>
 void send_event(E const & event)
 {
-  fsm_list::template dispatch<E>(event);
+  fsm::template dispatch<E>(event);
 }
 
 std::vector<std::string> explode( const std::string &delimiter, const std::string &str)
@@ -459,8 +459,9 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
   }
 }
 
-void I2Stask(void *p) {
-  while (1) {
+void I2Stask(void *p) {  
+  MatrixVoice *device = (MatrixVoice *)p;
+  while (1) {    
     if (xEventGroupGetBits(audioGroup) == PLAY) {
       size_t bytes_written;
       boolean timeout = false;
@@ -489,7 +490,7 @@ void I2Stask(void *p) {
               bytes_written = bytes_to_write;
             }
             if (bytes_written != bytes_to_write) {
-              Serial.printf("Bytes to write %d, but bytes written %d\n",bytes_to_write,bytes_written);
+              Serial.printf("Bytes to write %d, but bytes written %d\n\r",bytes_to_write,bytes_written);
             }
           }
       }
@@ -499,15 +500,16 @@ void I2Stask(void *p) {
       Serial.println("Done");
       send_event(StreamAudioEvent());
     }
-    if (xEventGroupGetBits(audioGroup) == STREAM && !config.mute_input) {
+    if (xEventGroupGetBits(audioGroup) == STREAM && !config.mute_input) {     
       device->setReadMode();
       uint8_t data[device->readSize * device->width];
+      uint8_t payload[sizeof(header) + (device->readSize * device->width)];
+      //Serial.printf("Size of data:  %d\n\r",sizeof(data));
       if (audioServer.connected()) {
         if (device->readAudio(data, device->readSize * device->width)) {
-          uint8_t payload[sizeof(header) + (device->readSize * device->width)];
-          memcpy(payload, &header, sizeof(header));
-          memcpy(&payload[sizeof(header)], data,sizeof(data));
-          audioServer.publish(audioFrameTopic.c_str(),(uint8_t *)payload, sizeof(payload));
+           memcpy(payload, &header, sizeof(header));
+           memcpy(&payload[sizeof(header)], data,sizeof(data));
+           audioServer.publish(audioFrameTopic.c_str(),(uint8_t *)payload, sizeof(payload));
         } else {
           //Loop, because otherwise this causes timeouts
           audioServer.loop();
@@ -521,21 +523,21 @@ void I2Stask(void *p) {
   vTaskDelete(NULL);
 }
 
-void initHeader() {
+void initHeader(int readSize, int width, int rate) {
     strncpy(header.riff_tag, "RIFF", 4);
     strncpy(header.wave_tag, "WAVE", 4);
     strncpy(header.fmt_tag, "fmt ", 4);
     strncpy(header.data_tag, "data", 4);
 
-    header.riff_length = (uint32_t)sizeof(header) + (device->readSize * device->width);
+    header.riff_length = (uint32_t)sizeof(header) + (readSize * width);
     header.fmt_length = 16;
     header.audio_format = 1;
     header.num_channels = 1;
-    header.sample_rate = device->rate;
-    header.byte_rate = device->rate * device->width;
-    header.block_align = device->width;
-    header.bits_per_sample = device->width * 8;
-    header.data_length = device->readSize * device->width;
+    header.sample_rate = rate;
+    header.byte_rate = rate * width;
+    header.block_align = width;
+    header.bits_per_sample = width * 8;
+    header.data_length = readSize * width;
 }
 
 void WiFiEvent(WiFiEvent_t event) {

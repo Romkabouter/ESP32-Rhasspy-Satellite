@@ -78,6 +78,8 @@
 
 #include "device.h"
 
+Device *device = new Device();
+
 #define M5ATOMECHO 0
 #define MATRIXVOICE 1
 #define AUDIOKIT 2
@@ -86,13 +88,10 @@
 // The *device is used to call methods 
 #if DEVICE_TYPE == M5ATOMECHO
   #include "devices/M5AtomEcho.hpp"
-  M5AtomEcho *device = new M5AtomEcho();
 #elif DEVICE_TYPE == MATRIXVOICE
   #include "devices/MatrixVoice.hpp"
-  MatrixVoice *device = new MatrixVoice();
 #elif DEVICE_TYPE == AUDIOKIT
   #include "devices/AudioKit.hpp"
-  AudioKit *device = new AudioKit();
 #endif
 
 #include <General.hpp>
@@ -101,6 +100,15 @@
 void setup() {
   Serial.begin(115200);
   Serial.println("Booting");
+  #if DEVICE_TYPE == M5ATOMECHO
+    M5AtomEcho *d = new M5AtomEcho();
+  #elif DEVICE_TYPE == MATRIXVOICE
+    MatrixVoice *d = new MatrixVoice();
+  #elif DEVICE_TYPE == AUDIOKIT
+    AudioKit *d = new AudioKit();
+  #endif
+
+  device = d;
   device->init();
 
   if (!SPIFFS.begin(true)) {
@@ -141,7 +149,7 @@ void setup() {
         Serial.println("End Failed");
     });
  
-  fsm_list::start();
+  fsm::start();
 
   server.on("/", handleRequest);
   server.begin();
@@ -151,5 +159,5 @@ void loop() {
   if (WiFi.isConnected()) {
     ArduinoOTA.handle();
   }
-  fsm_list::run();
+  fsm::run();
 }
