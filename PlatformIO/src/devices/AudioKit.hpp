@@ -63,9 +63,6 @@ public:
 
     bool isHotwordDetected();
 
-    int readSize = 512;
-    int writeSize = 1024;
-
 private:
     void InitI2SSpeakerOrMic(int mode);
     AC101 ac;
