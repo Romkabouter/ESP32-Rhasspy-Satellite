@@ -119,6 +119,7 @@ void setup() {
   }
 
   device->setGain(config.gain);
+  device->setVolume(config.volume);
 
   // ---------------------------------------------------------------------------
   // ArduinoOTA
