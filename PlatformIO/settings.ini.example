@@ -2,7 +2,6 @@
 hostname=192.168.43.140
 siteId=satellite
 ;supported: M5ATOMECHO=0, MATRIXVOICE=1, AUDIOKIT=2
-;matrixvoice does not work yet...
 device_type=0
 
 [Wifi]
