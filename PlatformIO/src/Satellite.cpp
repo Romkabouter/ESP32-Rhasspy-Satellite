@@ -79,6 +79,7 @@
 #include "device.h"
 
 Device *device = new Device();
+SemaphoreHandle_t wbSemaphore;
 
 #define M5ATOMECHO 0
 #define MATRIXVOICE 1
@@ -107,6 +108,12 @@ void setup() {
   #elif DEVICE_TYPE == AUDIOKIT
     AudioKit *d = new AudioKit();
   #endif
+
+  if (wbSemaphore == NULL)  // Not yet been created?
+  {
+      wbSemaphore = xSemaphoreCreateMutex();  // Create a mutex semaphore
+      if ((wbSemaphore) != NULL) xSemaphoreGive(wbSemaphore);  // Free for all
+  }
 
   device = d;
   device->init();

@@ -25,10 +25,14 @@ class HotwordDetected : public StateMachine
 {
   void entry(void) override {
     Serial.println("Enter HotwordDetected");
-    device->updateBrightness(config.hotword_brightness);
-    device->updateColors(COLORS_HOTWORD);
     xEventGroupClearBits(audioGroup, PLAY);
+    xEventGroupClearBits(audioGroup, STREAM);
+    device->updateBrightness(config.hotword_brightness);
+    if (xSemaphoreTake(wbSemaphore, (TickType_t)10000) == pdTRUE) {
+      device->updateColors(COLORS_HOTWORD);
+    }
     xEventGroupSetBits(audioGroup, STREAM);
+    xSemaphoreGive(wbSemaphore);
     initHeader(device->readSize, device->width, device->rate);
   }
 
@@ -58,10 +62,14 @@ class Idle : public StateMachine
   void entry(void) override {
     Serial.println("Enter Idle");
     hotwordDetected = false;
-    device->updateBrightness(config.brightness);
-    device->updateColors(COLORS_IDLE);
     xEventGroupClearBits(audioGroup, PLAY);
+    xEventGroupClearBits(audioGroup, STREAM);
+    device->updateBrightness(config.brightness);
+    if (xSemaphoreTake(wbSemaphore, (TickType_t)10000) == pdTRUE) {
+      device->updateColors(COLORS_IDLE);
+    }
     xEventGroupSetBits(audioGroup, STREAM);
+    xSemaphoreGive(wbSemaphore);
     initHeader(device->readSize, device->width, device->rate);
   }
 
@@ -176,6 +184,8 @@ class WifiConnected : public StateMachine
   void entry(void) override {
     Serial.println("Enter WifiConnected");
     Serial.println("Connected to Wifi with IP: " + WiFi.localIP().toString());
+    xEventGroupClearBits(audioGroup, PLAY);
+    xEventGroupClearBits(audioGroup, STREAM);
     device->updateBrightness(config.brightness);
     device->updateColors(COLORS_WIFI_CONNECTED);
     ArduinoOTA.begin();
@@ -427,7 +437,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
             audioData.pop(WaveData[k]);
         }
         XT_Wav_Class Message((const uint8_t *)WaveData);
-        Serial.printf("Samplerate: %d, Channels: %d, Format: %d, Bits per Sample: %d\n", (int)Message.SampleRate, (int)Message.NumChannels, (int)Message.Format, (int)Message.BitsPerSample);
+        Serial.printf("Samplerate: %d, Channels: %d, Format: %d, Bits per Sample: %d\n\r", (int)Message.SampleRate, (int)Message.NumChannels, (int)Message.Format, (int)Message.BitsPerSample);
         sampleRate = (int)Message.SampleRate;
         numChannels = (int)Message.NumChannels;
         bitDepth = (int)Message.BitsPerSample;
@@ -462,7 +472,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
 void I2Stask(void *p) {  
   MatrixVoice *device = (MatrixVoice *)p;
   while (1) {    
-    if (xEventGroupGetBits(audioGroup) == PLAY) {
+    if (xEventGroupGetBits(audioGroup) == PLAY && xSemaphoreTake(wbSemaphore, (TickType_t)5000) == pdTRUE) {
       size_t bytes_written;
       boolean timeout = false;
       int played = 44;
@@ -498,18 +508,25 @@ void I2Stask(void *p) {
       device->muteOutput(true);
       audioData.clear();
       Serial.println("Done");
+      xSemaphoreGive(wbSemaphore); 
       send_event(StreamAudioEvent());
     }
-    if (xEventGroupGetBits(audioGroup) == STREAM && !config.mute_input) {     
+    if (xEventGroupGetBits(audioGroup) == STREAM && !config.mute_input && xSemaphoreTake(wbSemaphore, (TickType_t)5000) == pdTRUE) {     
       device->setReadMode();
       uint8_t data[device->readSize * device->width];
       uint8_t payload[sizeof(header) + (device->readSize * device->width)];
-      //Serial.printf("Size of data:  %d\n\r",sizeof(data));
       if (audioServer.connected()) {
         if (device->readAudio(data, device->readSize * device->width)) {
-           memcpy(payload, &header, sizeof(header));
-           memcpy(&payload[sizeof(header)], data,sizeof(data));
-           audioServer.publish(audioFrameTopic.c_str(),(uint8_t *)payload, sizeof(payload));
+          //Rhasspy needs an audiofeed of 512 bytes+header per message
+          //Some devices, like the Matrix Voice do 512 16 bit read in one mic read
+          //This is 1024 bytes, so two message are needed in that case
+          int messageBytes = 512;
+          int message_count = sizeof(data) / messageBytes;
+          for (int i = 0; i < message_count; i++) {
+              memcpy(payload, &header, sizeof(header));
+              memcpy(&payload[sizeof(header)], &data[messageBytes * i], messageBytes);
+              audioServer.publish(audioFrameTopic.c_str(),(uint8_t *)payload, sizeof(payload));
+           }
         } else {
           //Loop, because otherwise this causes timeouts
           audioServer.loop();
@@ -518,6 +535,7 @@ void I2Stask(void *p) {
         xEventGroupClearBits(audioGroup, STREAM);
         send_event(MQTTDisconnectedEvent());
       }
+      xSemaphoreGive(wbSemaphore); 
     }
   }  
   vTaskDelete(NULL);

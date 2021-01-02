@@ -171,8 +171,6 @@ bool MatrixVoice::readAudio(uint8_t *data, size_t size) {
 	}
   memcpy(data, voicebuffer, readSize * width);
 	return true;
-
-
 }
 
 void MatrixVoice::writeAudio(uint8_t *data, size_t size, size_t *bytes_written) {
