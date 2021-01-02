@@ -56,7 +56,7 @@ public:
 private:
   matrix_hal::WishboneBus wb;
   matrix_hal::Everloop everloop;
-  matrix_hal::MicrophoneArray mics;
+	matrix_hal::MicrophoneArray *mics;
   matrix_hal::EverloopImage image1d;
   void playBytes(int16_t* input, uint32_t length);
 	void interleave(const int16_t * in_L, const int16_t * in_R, int16_t * out, const size_t num_samples);
@@ -73,12 +73,10 @@ void MatrixVoice::init()
 	Serial.println("Matrix Voice Initialized");
   wb.Init();
   everloop.Setup(&wb);
-  // setup mics
-  mics.Setup(&wb);
-  mics.SetSamplingRate(rate);  
-
-  // // Microphone Core Init
-  matrix_hal::MicrophoneCore mic_core(mics);
+	mics = new matrix_hal::MicrophoneArray();
+  mics->Setup(&wb);
+  mics->SetSamplingRate(rate);  
+  matrix_hal::MicrophoneCore mic_core(*mics);
   mic_core.Setup(&wb);  
 };
 
@@ -164,10 +162,10 @@ void MatrixVoice::setWriteMode(int sampleRate, int bitDepth, int numChannels) {
 }; 
 
 bool MatrixVoice::readAudio(uint8_t *data, size_t size) {
-	mics.Read();
+	mics->Read();
 	uint16_t voicebuffer[readSize];
 	for (uint32_t s = 0; s < readSize; s++) {
-	 	voicebuffer[s] = mics.Beam(s);
+	 	voicebuffer[s] = mics->Beam(s);
 	}
   memcpy(data, voicebuffer, readSize * width);
 	return true;

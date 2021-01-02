@@ -77,6 +77,7 @@ int sampleRate = 16000;
 int numChannels = 2;
 int bitDepth = 16;
 static EventGroupHandle_t audioGroup;
+SemaphoreHandle_t wbSemaphore;
 
 struct WifiDisconnected;
 struct MQTTDisconnected;

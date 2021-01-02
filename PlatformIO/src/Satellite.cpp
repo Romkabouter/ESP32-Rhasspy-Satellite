@@ -75,11 +75,7 @@
 #include <Arduino.h>
 #include <ArduinoOTA.h>
 #include <WiFi.h>
-
 #include "device.h"
-
-Device *device = new Device();
-SemaphoreHandle_t wbSemaphore;
 
 #define M5ATOMECHO 0
 #define MATRIXVOICE 1
@@ -89,10 +85,13 @@ SemaphoreHandle_t wbSemaphore;
 // The *device is used to call methods 
 #if DEVICE_TYPE == M5ATOMECHO
   #include "devices/M5AtomEcho.hpp"
+  M5AtomEcho *device = new M5AtomEcho();
 #elif DEVICE_TYPE == MATRIXVOICE
   #include "devices/MatrixVoice.hpp"
+  MatrixVoice *device = new MatrixVoice();  
 #elif DEVICE_TYPE == AUDIOKIT
   #include "devices/AudioKit.hpp"
+  AudioKit *device = new AudioKit();
 #endif
 
 #include <General.hpp>
@@ -101,21 +100,13 @@ SemaphoreHandle_t wbSemaphore;
 void setup() {
   Serial.begin(115200);
   Serial.println("Booting");
-  #if DEVICE_TYPE == M5ATOMECHO
-    M5AtomEcho *d = new M5AtomEcho();
-  #elif DEVICE_TYPE == MATRIXVOICE
-    MatrixVoice *d = new MatrixVoice();
-  #elif DEVICE_TYPE == AUDIOKIT
-    AudioKit *d = new AudioKit();
-  #endif
 
   if (wbSemaphore == NULL)  // Not yet been created?
   {
-      wbSemaphore = xSemaphoreCreateMutex();  // Create a mutex semaphore
-      if ((wbSemaphore) != NULL) xSemaphoreGive(wbSemaphore);  // Free for all
+    wbSemaphore = xSemaphoreCreateMutex();  // Create a mutex semaphore
+    if ((wbSemaphore) != NULL) xSemaphoreGive(wbSemaphore);  // Free for all
   }
 
-  device = d;
   device->init();
 
   if (!SPIFFS.begin(true)) {

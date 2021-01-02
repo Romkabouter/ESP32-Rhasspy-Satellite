@@ -470,7 +470,6 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
 }
 
 void I2Stask(void *p) {  
-  MatrixVoice *device = (MatrixVoice *)p;
   while (1) {    
     if (xEventGroupGetBits(audioGroup) == PLAY && xSemaphoreTake(wbSemaphore, (TickType_t)5000) == pdTRUE) {
       size_t bytes_written;
@@ -514,19 +513,19 @@ void I2Stask(void *p) {
     if (xEventGroupGetBits(audioGroup) == STREAM && !config.mute_input && xSemaphoreTake(wbSemaphore, (TickType_t)5000) == pdTRUE) {     
       device->setReadMode();
       uint8_t data[device->readSize * device->width];
-      uint8_t payload[sizeof(header) + (device->readSize * device->width)];
       if (audioServer.connected()) {
         if (device->readAudio(data, device->readSize * device->width)) {
           //Rhasspy needs an audiofeed of 512 bytes+header per message
           //Some devices, like the Matrix Voice do 512 16 bit read in one mic read
           //This is 1024 bytes, so two message are needed in that case
           int messageBytes = 512;
+          uint8_t payload[sizeof(header) + messageBytes];
           int message_count = sizeof(data) / messageBytes;
           for (int i = 0; i < message_count; i++) {
-              memcpy(payload, &header, sizeof(header));
-              memcpy(&payload[sizeof(header)], &data[messageBytes * i], messageBytes);
-              audioServer.publish(audioFrameTopic.c_str(),(uint8_t *)payload, sizeof(payload));
-           }
+            memcpy(payload, &header, sizeof(header));
+            memcpy(&payload[sizeof(header)], &data[messageBytes * i], messageBytes);
+            audioServer.publish(audioFrameTopic.c_str(),(uint8_t *)payload, sizeof(payload));
+          }
         } else {
           //Loop, because otherwise this causes timeouts
           audioServer.loop();
