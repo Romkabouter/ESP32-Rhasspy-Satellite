@@ -348,17 +348,17 @@ void loadConfiguration(const char *filename, Config &config) {
     config.mqtt_pass = doc.getMember("mqtt_pass").as<std::string>();
     config.mute_input = doc.getMember("mute_input").as<int>();
     config.mute_output = doc.getMember("mute_output").as<int>();
-    //device->muteOutput(config.mute_output);
+    device->muteOutput(config.mute_output);
     config.amp_output = doc.getMember("amp_output").as<int>();
-    //device->ampOutput(config.amp_output);
+    device->ampOutput(config.amp_output);
     config.brightness = doc.getMember("brightness").as<int>();
-    //device->updateBrightness(config.brightness);
+    device->updateBrightness(config.brightness);
     config.hotword_brightness = doc.getMember("hotword_brightness").as<int>();
     config.hotword_detection = doc.getMember("hotword_detection").as<int>();
     config.volume = doc.getMember("volume").as<int>();
-    //device->setVolume(config.volume);
+    device->setVolume(config.volume);
     config.gain = doc.getMember("gain").as<int>();
-    //device->setGain(config.gain);
+    device->setGain(config.gain);
     if (config.mqtt_host[0] == 0) {
         config.mqtt_valid = false;
     }
