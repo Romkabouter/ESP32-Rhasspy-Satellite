@@ -65,7 +65,7 @@ Restart the device by publishing {"passwordhash":"yourpasswordhash"} to SITEID/r
 
 # Adding devices
 
-It is possible to add device that have leds. micrphones and speakers, the statemachine does not have to change for this.
+It is possible to add a device that has leds, microphones and/or speakers, the statemachine does not have to change for this.
 
 Adding a device is relatively simple:
 
