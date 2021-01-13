@@ -3,7 +3,7 @@ const char index_html[] PROGMEM = R"=====(
 <!DOCTYPE html>
 <html>
 <head>
-<title>Matrix Voice Configuration</title>
+<title>Satellite Configuration</title>
 <meta http-equiv="content-type" content="text/html; charset=ISO-8859-1">
 <style>
 * {box-sizing: border-box;}
@@ -38,7 +38,7 @@ input::-moz-focus-inner,input::-moz-focus-outer {border: 0;}
 </head>
 <body>
   <form action="/" method="post">
-    <h2>Matrix Voice Configuration</h2>
+    <h2>Satellite Configuration</h2>
     <div class="input-container">
       <label for="mqtt_host">MQTT ip:&nbsp;</label>
       <input class="input-field" type="text" placeholder="MQTT IP" name="mqtt_host" value="%MQTT_HOST%">
@@ -46,6 +46,14 @@ input::-moz-focus-inner,input::-moz-focus-outer {border: 0;}
     <div class="input-container">
       <label for="mqtt_port">MQTT port:&nbsp;</label>
       <input class="input-field" type="text" placeholder="MQTT port" name="mqtt_port" value="%MQTT_PORT%">
+    </div>
+    <div class="input-container">
+      <label for="mqtt_user">MQTT username:&nbsp;</label>
+      <input class="input-field" type="text" placeholder="MQTT username" name="mqtt_user" value="%MQTT_USER%">
+    </div>
+    <div class="input-container">
+      <label for="mqtt_pass">MQTT password:&nbsp;</label>
+      <input class="input-field" type="password" placeholder="MQTT password" name="mqtt_pass" value="%MQTT_PASS%">
     </div>
     <div class="input-container">
       <label for="mute_input">Mute input:&nbsp;</label>
@@ -102,17 +110,6 @@ input::-moz-focus-inner,input::-moz-focus-outer {border: 0;}
         <input type="range" min="1" max="8" value="%GAIN%" class="range-slider__range" name="gain">
         <span class="range-slider__value">0</span>
       </div>
-    </div>
-    <div class="input-container">
-      <label for="framerate">Framerate:&nbsp;</label>
-      <select name="framerate">
-        <option value="32" %FR_32%>32</option>
-        <option value="64" %FR_64%>64</option>
-        <option value="128" %FR_128%>128</option>
-        <option value="256" %FR_256%>256</option>
-        <option value="512" %FR_512%>512</option>
-        <option value="1024" %FR_1024%>1024</option>
-      </select>
     </div>
     <button type="submit" class="btn">Save</button>
   </form>

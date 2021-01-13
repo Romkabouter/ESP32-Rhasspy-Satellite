@@ -1,19 +1,26 @@
-[Matrix]
+[General]
 hostname=192.168.43.140
-siteId=matrixvoice
+deployhost=192.168.43.24
+siteId=satellite
+;supported: M5ATOMECHO=0, MATRIXVOICE=1, AUDIOKIT=2
+device_type=0
 
 [Wifi]
 ssid=SSID
 password=password
 
 [OTA]
-password=OTA
+;supported: upload, ota, matrix
+;-upload: device should be attached to computer via usb
+;-ota: will use espota
+;-matrix: matrix voice should be attached to a raspberry pi with matrix software.
+;         deployhost should be set to ip of the pi
+method=upload
+password=OTApassword
 port=3232
 
 [MQTT]
 ip=192.168.43.54
-hostname=192.168.43.54
 port=1883
 username=username
 password=password
-maxPacketSize=2000
