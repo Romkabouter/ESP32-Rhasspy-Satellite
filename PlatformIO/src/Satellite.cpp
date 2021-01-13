@@ -2,12 +2,11 @@
    Matrix Voice Audio Streamer
 
    This program is written to be a streaming audio server running on the Matrix
-   Voice. This is typically used for Snips.AI or Rhasspy, it will then be able to replace the
-   Snips Audio Server, by publishing small wave messages to the hermes protocol
-   See https://snips.ai/ or https://rhasspy.readthedocs.io/en/latest/ for more information
+   Voice. This is typically used for Rhasspy.
+   See https://rhasspy.readthedocs.io/en/latest/ for more information
 
    Author:  Paul Romkes
-   Date:    October 2020
+   Date:    Januari 2021
    Version: 7.0
 
    Changelog:
@@ -70,6 +69,10 @@
     - Improved stability for MQTT stream
    v7.0:
     - Complete rewrite using StateMachine
+    - Support multiplate devices
+    - Removed Snips.ia support
+    - Removed local hotword detected (does not compile against latest espressif32)
+      Will hopefully be replaced by a porcupine lib soon
 * ************************************************************************ */
 
 #include <Arduino.h>

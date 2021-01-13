@@ -10,13 +10,22 @@ Support for Snips is dropped.
 - For the Matrix Voice, during first flash a Raspberri Pi is needed, afer that OTA can be used
 - LED Support
 - OTA Updating
-- Dynamic brightness and colors for idle, hotword, updating and disconnected
+- Dynamic brightness and colors for idle, hotword and disconnected
 - Mute / unmute microphones via MQTT
+- Mute / unmute speakers via MQTT
+- Adjust volume via MQTT (if supported by device)
+- Adjust output (speaker/jack) via MQTT (if supported by device)
+- Adjust gain via MQTT (if supported by device)
 - Reboot device by sending hashed password
+- Configuration possible in browser
+- Audio playback, recommended not higher than 441000 samplerate (see Known Issues)
+- Hardware button to start session (if supported by device)
 
 ## Getting started
 [Matrix Voice](matrixvoice.md)
+
 [M5 Atom Echo](m5atomecho.md)
+
 [Audio Kit](audiokit.md)
 
 ## MQTT commands
