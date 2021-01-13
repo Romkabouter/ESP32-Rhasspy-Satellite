@@ -20,8 +20,8 @@ enum {
 AsyncWebServer server(80);
 //Configuration defaults
 struct Config {
-  IPAddress mqtt_host = MQTT_IP;
-  bool mqtt_valid = true;
+  IPAddress mqtt_host;
+  bool mqtt_valid = false;
   int mqtt_port = MQTT_PORT;
   std::string mqtt_user = MQTT_USER;
   std::string mqtt_pass = MQTT_PASS;
@@ -340,6 +340,7 @@ void loadConfiguration(const char *filename, Config &config) {
   DeserializationError error = deserializeJson(doc, file);
   if (error) {
     Serial.println(F("Failed to read file, using default configuration"));
+    config.mqtt_valid = config.mqtt_host.fromString(MQTT_IP);
   } else {
     serializeJsonPretty(doc, Serial);  
     config.mqtt_valid = config.mqtt_host.fromString(doc.getMember("mqtt_host").as<const char*>());

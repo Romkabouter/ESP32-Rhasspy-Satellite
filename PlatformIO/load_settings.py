@@ -15,14 +15,14 @@ if os.path.isfile(settings):
     config.read(settings)
 
     otaPasswordHash = hashlib.md5(config[sectionOta]['password'].encode()).hexdigest()
-
+ 
     env.Append(CPPDEFINES=[
         ("WIFI_SSID", "\\\"" + config[sectionWifi]["ssid"] + "\\\""),
         ("WIFI_PASS", "\\\"" + config[sectionWifi]["password"] + "\\\""),
         ("OTA_PASS_HASH", "\\\"" + otaPasswordHash + "\\\""),
         ("SITEID", "\\\"" + config[sectionGeneral]["siteId"] + "\\\""),
         ("HOSTNAME", "\\\"" + config[sectionGeneral]["hostname"] + "\\\""),
-        ("MQTT_IP", "IPAddress\(" + config[sectionMqtt]["ip"].replace(".", ",") + "\)"),
+        ("MQTT_IP", "\\\"" + config[sectionMqtt]["ip"] + "\\\""),
         ("MQTT_PORT", config[sectionMqtt]["port"]),
         ("MQTT_USER", "\\\"" + config[sectionMqtt]["username"] + "\\\""),
         ("MQTT_PASS", "\\\"" + config[sectionMqtt]["password"] + "\\\""),
@@ -35,7 +35,13 @@ if os.path.isfile(settings):
         env.Replace(
             TARGETS="upload",
         )
-    
+
+    if (config[sectionOta]["method"] == "matrix") :
+        env.Replace(
+            UPLOAD_PROTOCOL="custom",
+            UPLOADCMD="sh deploy.sh " + config[sectionGeneral]["deployhost"]
+        )
+
     if (config[sectionOta]["method"] == "ota") :
         env.Replace(
             UPLOAD_PROTOCOL="espota",

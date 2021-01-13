@@ -21,7 +21,7 @@ else
     echo ""
     cp .pio/build/esp32dev/firmware.bin .
     cp .pio/build/esp32dev/partitions.bin .
-    echo "Loading firmware: $FIRMWARE"
+    echo "Loading firmware: $FIRMWARE to $1"
     echo ""
     tar cf - *.bin | ssh pi@$1 'tar xf - -C /tmp;sudo voice_esp32_reset;voice_esptool --chip esp32 --port /dev/ttyS0 --baud 1500000 --before default_reset --after hard_reset write_flash -u --flash_mode dio --flash_freq 40m --flash_size detect 0x1000 /tmp/bootloader.bin 0x10000 /tmp/firmware.bin 0x8000 /tmp/partitions.bin'
     echo "done"
