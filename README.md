@@ -52,7 +52,6 @@ The topic SITEID/audio also can receive multiple commands:
 - Mute/unmute playback: publishing {"mute_output":"true"} or {"mute_output":"false"}
 - Change the amp to jack/speaker: publish {"amp_output":"0"} or {"amp_output":"1"} (Only if a device supports this)
 - Adjust mic gain: publish {"gain":5}
-- Switch local/remote hotword detection: publish {"hotword":"local"} or {"hotword":"remote"}, Local only supports "Alexa"
 - Adjust volume: publish {"volume": 50} (If device supports this)
 
 Restart the device by publishing {"passwordhash":"yourpasswordhash"} to SITEID/restart
@@ -60,10 +59,9 @@ Restart the device by publishing {"passwordhash":"yourpasswordhash"} to SITEID/r
 ## Known issues
 
 - Uploading sometimes fails or an error is thrown when the uploading is done.
-- Audio playback with sample rate > 22050 can lead to hissing/cracking/distortion. Recommended is to use a samplerate of 16000
-- Audio playback with matrix voice is not good.
-- Update colors does not work yet
-- Local hotword not working yet
+- Audio playback with sample rate higher than 22050 can lead to hissing/cracking/distortion. Recommended is to use a samplerate of 16000
+- Audio playback with matrix voice is not good, code needs to resample to 44100. WIP
+- Update colors do not work yet
 
 # Adding devices
 
@@ -76,5 +74,5 @@ Adding a device is relatively simple:
 - Create a hpp file for your device in the devices folder and implement the methods you need, see the other devices for examples.
 - Add a #ifdef in Satellite.cpp as per examples already there
 - Add needed libraries in platform.ini under lib_deps
-- Search for examples in the code or raise an issue if you need help
+- Search for examples in the code or raise an issue/quastion if you need help
 - Add a "get started" md file and link it in the readme.
