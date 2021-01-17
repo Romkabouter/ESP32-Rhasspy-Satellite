@@ -68,7 +68,11 @@ class Idle : public StateMachine
     if (xSemaphoreTake(wbSemaphore, (TickType_t)10000) == pdTRUE) {
       device->updateColors(COLORS_IDLE);
     }
-    xEventGroupSetBits(audioGroup, STREAM);
+    // start streaming audio to the remote endpoint for hotword detection
+    if (config.hotword_detection == HW_REMOTE)
+    {
+      xEventGroupSetBits(audioGroup, STREAM);
+    }
     xSemaphoreGive(wbSemaphore);
     initHeader(device->readSize, device->width, device->rate);
   }
@@ -518,9 +522,9 @@ void I2Stask(void *p) {
           //Rhasspy needs an audiofeed of 512 bytes+header per message
           //Some devices, like the Matrix Voice do 512 16 bit read in one mic read
           //This is 1024 bytes, so two message are needed in that case
-          int messageBytes = 512;
+          const int messageBytes = 512;
           uint8_t payload[sizeof(header) + messageBytes];
-          int message_count = sizeof(data) / messageBytes;
+          const int message_count = sizeof(data) / messageBytes;
           for (int i = 0; i < message_count; i++) {
             memcpy(payload, &header, sizeof(header));
             memcpy(&payload[sizeof(header)], &data[messageBytes * i], messageBytes);
