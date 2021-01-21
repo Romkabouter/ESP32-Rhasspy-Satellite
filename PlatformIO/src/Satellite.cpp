@@ -73,6 +73,8 @@
     - Removed Snips.ia support
     - Removed local hotword detected (does not compile against latest espressif32)
       Will hopefully be replaced by a porcupine lib soon
+   v7.1:
+    - Audio task should run on core 1
 * ************************************************************************ */
 
 #include <Arduino.h>
