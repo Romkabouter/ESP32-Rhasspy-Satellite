@@ -31,9 +31,9 @@ class HotwordDetected : public StateMachine
     if (xSemaphoreTake(wbSemaphore, (TickType_t)10000) == pdTRUE) {
       device->updateColors(COLORS_HOTWORD);
     }
-    xEventGroupSetBits(audioGroup, STREAM);
     xSemaphoreGive(wbSemaphore);
     initHeader(device->readSize, device->width, device->rate);
+    xEventGroupSetBits(audioGroup, STREAM);
   }
 
   void react(StreamAudioEvent const &) override { 
@@ -68,13 +68,13 @@ class Idle : public StateMachine
     if (xSemaphoreTake(wbSemaphore, (TickType_t)10000) == pdTRUE) {
       device->updateColors(COLORS_IDLE);
     }
+    xSemaphoreGive(wbSemaphore);
+    initHeader(device->readSize, device->width, device->rate);
     // start streaming audio to the remote endpoint for hotword detection
     if (config.hotword_detection == HW_REMOTE)
     {
       xEventGroupSetBits(audioGroup, STREAM);
     }
-    xSemaphoreGive(wbSemaphore);
-    initHeader(device->readSize, device->width, device->rate);
   }
 
   void run(void) override {
@@ -158,7 +158,7 @@ class MQTTDisconnected : public StateMachine {
     audioServer.setServer(config.mqtt_host, config.mqtt_port);
     char clientID[100];
     sprintf(clientID, "%sAudio", SITEID);
-    asyncClient.connect();
+   asyncClient.connect();
     audioServer.connect(clientID, MQTT_USER, MQTT_PASS);
   }
 
@@ -212,7 +212,7 @@ class WifiDisconnected : public StateMachine
     device->muteOutput(true);
     xEventGroupClearBits(audioGroup, STREAM);
     xEventGroupClearBits(audioGroup, PLAY);
-    xTaskCreatePinnedToCore(I2Stask, "I2Stask", 30000, (void*)device, 1, NULL, 1);
+    xTaskCreatePinnedToCore(I2Stask, "I2Stask", 30000, NULL, 3, NULL, 0);
     Serial.println("Enter WifiDisconnected");
     Serial.printf("Total heap: %d\n\r", ESP.getHeapSize());
     Serial.printf("Free heap: %d\n\r", ESP.getFreeHeap());

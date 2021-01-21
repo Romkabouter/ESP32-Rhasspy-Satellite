@@ -27,7 +27,7 @@ if os.path.isfile(settings):
         ("MQTT_USER", "\\\"" + config[sectionMqtt]["username"] + "\\\""),
         ("MQTT_PASS", "\\\"" + config[sectionMqtt]["password"] + "\\\""),
         ("MQTT_MAX_PACKET_SIZE", 2000),
-        ("CONFIG_ASYNC_TCP_RUNNING_CORE", 0),
+        ("CONFIG_ASYNC_TCP_RUNNING_CORE", 1),
         ("DEVICE_TYPE", config[sectionGeneral]["device_type"])
     ])
 
