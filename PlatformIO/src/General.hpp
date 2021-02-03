@@ -342,7 +342,8 @@ void loadConfiguration(const char *filename, Config &config) {
     Serial.println(F("Failed to read file, using default configuration"));
     config.mqtt_valid = config.mqtt_host.fromString(MQTT_IP);
   } else {
-    serializeJsonPretty(doc, Serial);  
+    serializeJsonPretty(doc, Serial);
+    Serial.println();  
     config.mqtt_valid = config.mqtt_host.fromString(doc.getMember("mqtt_host").as<const char*>());
     config.mqtt_port = doc.getMember("mqtt_port").as<int>();
     config.mqtt_user = doc.getMember("mqtt_user").as<std::string>();
