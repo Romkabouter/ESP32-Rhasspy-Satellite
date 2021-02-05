@@ -220,19 +220,24 @@ class WifiDisconnected : public StateMachine
     device->updateColors(COLORS_WIFI_DISCONNECTED);
     
     // Set static ip address
-    #if defined(HOST_IP) && defined(HOST_GATEWAY)  && defined(HOST_SUBNET)  && defined(HOST_DNS)
-      Serial.printf("Set static ip: %s, gateway: %s, subnet: %s, dns: %s\r\n", HOST_IP, HOST_GATEWAY, HOST_SUBNET, HOST_DNS);
+    #if defined(HOST_IP) && defined(HOST_GATEWAY)  && defined(HOST_SUBNET)  && defined(HOST_DNS1)
       IPAddress ip;
       IPAddress gateway;
       IPAddress subnet;
-      IPAddress dns;
+      IPAddress dns1;
+      IPAddress dns2;
 
       ip.fromString(HOST_IP);
       gateway.fromString(HOST_GATEWAY);
       subnet.fromString(HOST_SUBNET);
-      dns.fromString(HOST_DNS);
+      dns1.fromString(HOST_DNS1);
 
-      WiFi.config(ip, gateway, subnet, dns);
+      #ifdef HOST_DNS2
+        dns2.fromString(HOST_DNS2);
+      #endif
+
+      Serial.printf("Set static ip: %s, gateway: %s, subnet: %s, dns1: %s, dns2: %s\r\n", ip.toString().c_str(), gateway.toString().c_str(), subnet.toString().c_str(), dns1.toString().c_str(), dns2.toString().c_str());
+      WiFi.config(ip, gateway, subnet, dns1, dns2);
     #endif
 
     WiFi.onEvent(WiFiEvent);

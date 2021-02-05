@@ -31,11 +31,14 @@ if os.path.isfile(settings):
         ("DEVICE_TYPE", config[sectionGeneral]["device_type"])
     ]
 
-    if ("ip" in config[sectionWifi] and "gateway" in config[sectionWifi] and "subnet" in config[sectionWifi] and "dns" in config[sectionWifi]) :
+    if ("ip" in config[sectionWifi] and "gateway" in config[sectionWifi] and "subnet" in config[sectionWifi] and "dns1" in config[sectionWifi]) :
         cpp_defines.append(("HOST_IP", "\\\"" + config[sectionWifi]["ip"] + "\\\""))
         cpp_defines.append(("HOST_GATEWAY", "\\\"" + config[sectionWifi]["gateway"] + "\\\""))
         cpp_defines.append(("HOST_SUBNET", "\\\"" + config[sectionWifi]["subnet"] + "\\\""))
-        cpp_defines.append(("HOST_DNS", "\\\"" + config[sectionWifi]["dns"] + "\\\""))
+        cpp_defines.append(("HOST_DNS1", "\\\"" + config[sectionWifi]["dns1"] + "\\\""))
+
+        if ("dns2" in config[sectionWifi]) :
+            cpp_defines.append(("HOST_DNS2", "\\\"" + config[sectionWifi]["dns2"] + "\\\""))
 
     env.Append(CPPDEFINES=cpp_defines)
 
