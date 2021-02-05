@@ -9,6 +9,7 @@ sectionGeneral = "General"
 sectionWifi = "Wifi"
 sectionOta = "OTA"
 sectionMqtt = "MQTT"
+bool staticIp = False
 
 if os.path.isfile(settings):
     config = configparser.RawConfigParser()
@@ -40,6 +41,8 @@ if os.path.isfile(settings):
         if ("dns2" in config[sectionWifi]) :
             cpp_defines.append(("HOST_DNS2", "\\\"" + config[sectionWifi]["dns2"] + "\\\""))
 
+        staticIp = True
+
     env.Append(CPPDEFINES=cpp_defines)
 
     if (config[sectionOta]["method"] == "upload") :
@@ -56,7 +59,7 @@ if os.path.isfile(settings):
     if (config[sectionOta]["method"] == "ota") :
         env.Replace(
             UPLOAD_PROTOCOL="espota",
-            UPLOAD_PORT=config[sectionWifi]["ip"] if "ip" in config[sectionWifi] else config[sectionGeneral]["hostname"],
+            UPLOAD_PORT=config[sectionWifi]["ip"] if staticIp else config[sectionGeneral]["hostname"],
             UPLOAD_FLAGS=[
                 "--port=" + config[sectionOta]["port"],
                 "--auth=" + config[sectionOta]["password"],
