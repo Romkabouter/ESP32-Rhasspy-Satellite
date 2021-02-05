@@ -9,6 +9,14 @@ device_type=0
 ssid=SSID
 password=password
 
+;uncomment next 4 lines and fill with your own values if you want to use a static ip address
+;ip=192.168.xxx.xxx
+;gateway=192.168.xxx.xxx
+;subnet=255.255.255.0
+;dns1=192.168.xxx.xxx
+;optional: second dns server
+;dns2=192.168.xxx.xxx 
+
 [OTA]
 ;supported: upload, ota, matrix
 ;-upload: device should be attached to computer via usb

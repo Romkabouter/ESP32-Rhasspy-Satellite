@@ -113,7 +113,7 @@ class Idle : public StateMachine
 class MQTTConnected : public StateMachine {
   void entry(void) override {
     Serial.println("Enter MQTTConnected");
-    Serial.printf("Connected as %s\n\r",SITEID);
+    Serial.printf("Connected as %s\r\n",SITEID);
     publishDebug("Connected to asynch MQTT!");
     asyncClient.subscribe(playBytesTopic.c_str(), 0);
     asyncClient.subscribe(hotwordTopic.c_str(), 0);
@@ -214,10 +214,32 @@ class WifiDisconnected : public StateMachine
     xEventGroupClearBits(audioGroup, PLAY);
     xTaskCreatePinnedToCore(I2Stask, "I2Stask", 30000, NULL, 3, NULL, 0);
     Serial.println("Enter WifiDisconnected");
-    Serial.printf("Total heap: %d\n\r", ESP.getHeapSize());
-    Serial.printf("Free heap: %d\n\r", ESP.getFreeHeap());
+    Serial.printf("Total heap: %d\r\n", ESP.getHeapSize());
+    Serial.printf("Free heap: %d\r\n", ESP.getFreeHeap());
     device->updateBrightness(config.brightness);
     device->updateColors(COLORS_WIFI_DISCONNECTED);
+    
+    // Set static ip address
+    #if defined(HOST_IP) && defined(HOST_GATEWAY)  && defined(HOST_SUBNET)  && defined(HOST_DNS1)
+      IPAddress ip;
+      IPAddress gateway;
+      IPAddress subnet;
+      IPAddress dns1;
+      IPAddress dns2;
+
+      ip.fromString(HOST_IP);
+      gateway.fromString(HOST_GATEWAY);
+      subnet.fromString(HOST_SUBNET);
+      dns1.fromString(HOST_DNS1);
+
+      #ifdef HOST_DNS2
+        dns2.fromString(HOST_DNS2);
+      #endif
+
+      Serial.printf("Set static ip: %s, gateway: %s, subnet: %s, dns1: %s, dns2: %s\r\n", ip.toString().c_str(), gateway.toString().c_str(), subnet.toString().c_str(), dns1.toString().c_str(), dns2.toString().c_str());
+      WiFi.config(ip, gateway, subnet, dns1, dns2);
+    #endif
+
     WiFi.onEvent(WiFiEvent);
     WiFi.mode(WIFI_STA);
     WiFi.begin(WIFI_SSID, WIFI_PASS);
@@ -441,7 +463,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
             audioData.pop(WaveData[k]);
         }
         XT_Wav_Class Message((const uint8_t *)WaveData);
-        Serial.printf("Samplerate: %d, Channels: %d, Format: %d, Bits per Sample: %d\n\r", (int)Message.SampleRate, (int)Message.NumChannels, (int)Message.Format, (int)Message.BitsPerSample);
+        Serial.printf("Samplerate: %d, Channels: %d, Format: %d, Bits per Sample: %d\r\n", (int)Message.SampleRate, (int)Message.NumChannels, (int)Message.Format, (int)Message.BitsPerSample);
         sampleRate = (int)Message.SampleRate;
         numChannels = (int)Message.NumChannels;
         bitDepth = (int)Message.BitsPerSample;
@@ -503,7 +525,7 @@ void I2Stask(void *p) {
               bytes_written = bytes_to_write;
             }
             if (bytes_written != bytes_to_write) {
-              Serial.printf("Bytes to write %d, but bytes written %d\n\r",bytes_to_write,bytes_written);
+              Serial.printf("Bytes to write %d, but bytes written %d\r\n",bytes_to_write,bytes_written);
             }
           }
       }
