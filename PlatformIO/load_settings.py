@@ -9,7 +9,7 @@ sectionGeneral = "General"
 sectionWifi = "Wifi"
 sectionOta = "OTA"
 sectionMqtt = "MQTT"
-bool staticIp = False
+staticIp = False
 
 if os.path.isfile(settings):
     config = configparser.RawConfigParser()
