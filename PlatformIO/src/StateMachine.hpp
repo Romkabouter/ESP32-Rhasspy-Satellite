@@ -208,7 +208,12 @@ class WifiDisconnected : public StateMachine
     device->muteOutput(true);
     xEventGroupClearBits(audioGroup, STREAM);
     xEventGroupClearBits(audioGroup, PLAY);
-    xTaskCreatePinnedToCore(I2Stask, "I2Stask", 30000, NULL, 3, NULL, 0);
+    if (i2sHandle == NULL) {
+      Serial.println("Creating I2Stask");
+      xTaskCreatePinnedToCore(I2Stask, "I2Stask", 30000, NULL, 3, &i2sHandle, 0);
+    } else {
+      Serial.println("We already have a I2Stask");
+    }
     Serial.println("Enter WifiDisconnected");
     Serial.printf("Total heap: %d\r\n", ESP.getHeapSize());
     Serial.printf("Free heap: %d\r\n", ESP.getFreeHeap());

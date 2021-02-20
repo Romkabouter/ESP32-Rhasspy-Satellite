@@ -78,6 +78,7 @@ int numChannels = 2;
 int bitDepth = 16;
 static EventGroupHandle_t audioGroup;
 SemaphoreHandle_t wbSemaphore;
+TaskHandle_t i2sHandle;
 
 struct WifiDisconnected;
 struct MQTTDisconnected;

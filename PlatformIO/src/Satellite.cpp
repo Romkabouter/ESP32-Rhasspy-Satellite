@@ -78,6 +78,8 @@
    v7.2:
     - Added static IP configuration
     - Fix reboot when HW_LOCAL is set
+   v7.3
+    - Fix double creation of I2Stask
 * ************************************************************************ */
 
 #include <Arduino.h>
