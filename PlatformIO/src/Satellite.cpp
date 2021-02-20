@@ -75,6 +75,9 @@
       Will hopefully be replaced by a porcupine lib soon
    v7.1:
     - Audio task should run on core 1
+   v7.2:
+    - Added static IP configuration
+    - Fix reboot when HW_LOCAL is set
 * ************************************************************************ */
 
 #include <Arduino.h>

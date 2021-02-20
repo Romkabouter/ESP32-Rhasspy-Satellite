@@ -70,11 +70,7 @@ class Idle : public StateMachine
     }
     xSemaphoreGive(wbSemaphore);
     initHeader(device->readSize, device->width, device->rate);
-    // start streaming audio to the remote endpoint for hotword detection
-    if (config.hotword_detection == HW_REMOTE)
-    {
-      xEventGroupSetBits(audioGroup, STREAM);
-    }
+    xEventGroupSetBits(audioGroup, STREAM);
   }
 
   void run(void) override {
@@ -541,16 +537,21 @@ void I2Stask(void *p) {
       uint8_t data[device->readSize * device->width];
       if (audioServer.connected()) {
         if (device->readAudio(data, device->readSize * device->width)) {
-          //Rhasspy needs an audiofeed of 512 bytes+header per message
-          //Some devices, like the Matrix Voice do 512 16 bit read in one mic read
-          //This is 1024 bytes, so two message are needed in that case
-          const int messageBytes = 512;
-          uint8_t payload[sizeof(header) + messageBytes];
-          const int message_count = sizeof(data) / messageBytes;
-          for (int i = 0; i < message_count; i++) {
-            memcpy(payload, &header, sizeof(header));
-            memcpy(&payload[sizeof(header)], &data[messageBytes * i], messageBytes);
-            audioServer.publish(audioFrameTopic.c_str(),(uint8_t *)payload, sizeof(payload));
+          // only send audio if hotword_detection is HW_REMOTE.
+          //TODO when LOCAL is supported: check if hotword is detected and send audio as well in that case
+          if (config.hotword_detection == HW_REMOTE)
+          {
+            //Rhasspy needs an audiofeed of 512 bytes+header per message
+            //Some devices, like the Matrix Voice do 512 16 bit read in one mic read
+            //This is 1024 bytes, so two message are needed in that case
+            const int messageBytes = 512;
+            uint8_t payload[sizeof(header) + messageBytes];
+            const int message_count = sizeof(data) / messageBytes;
+            for (int i = 0; i < message_count; i++) {
+              memcpy(payload, &header, sizeof(header));
+              memcpy(&payload[sizeof(header)], &data[messageBytes * i], messageBytes);
+              audioServer.publish(audioFrameTopic.c_str(),(uint8_t *)payload, sizeof(payload));
+            }
           }
         } else {
           //Loop, because otherwise this causes timeouts
