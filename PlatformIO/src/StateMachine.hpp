@@ -154,7 +154,7 @@ class MQTTDisconnected : public StateMachine {
     audioServer.setServer(config.mqtt_host, config.mqtt_port);
     char clientID[100];
     sprintf(clientID, "%sAudio", SITEID);
-   asyncClient.connect();
+    asyncClient.connect();
     audioServer.connect(clientID, MQTT_USER, MQTT_PASS);
   }
 
@@ -568,6 +568,10 @@ void I2Stask(void *p) {
       }
       xSemaphoreGive(wbSemaphore); 
     }
+
+    //Added for stability when neither PLAY or STREAM is set.
+    vTaskDelay(10);
+
   }  
   vTaskDelete(NULL);
 }

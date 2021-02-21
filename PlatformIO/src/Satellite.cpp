@@ -80,6 +80,8 @@
     - Fix reboot when HW_LOCAL is set
    v7.3
     - Fix double creation of I2Stask
+   v7.4
+    - Added taskdelay for better stability on I2Stask
 * ************************************************************************ */
 
 #include <Arduino.h>
