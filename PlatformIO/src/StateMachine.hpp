@@ -148,14 +148,15 @@ class MQTTDisconnected : public StateMachine {
       asyncClient.onMessage(onMqttMessage);
       mqttInitialized = true;
     }
+    Serial.printf("Connecting MQTT: %s, %d\n", config.mqtt_host.c_str(), config.mqtt_port);
     asyncClient.setClientId(SITEID);
-    asyncClient.setServer(config.mqtt_host, config.mqtt_port);
-    asyncClient.setCredentials(MQTT_USER, MQTT_PASS);
-    audioServer.setServer(config.mqtt_host, config.mqtt_port);
+    asyncClient.setServer(config.mqtt_host.c_str(), config.mqtt_port);
+    asyncClient.setCredentials(config.mqtt_user.c_str(), config.mqtt_pass.c_str());
+    audioServer.setServer(config.mqtt_host.c_str(), config.mqtt_port);
     char clientID[100];
-    sprintf(clientID, "%sAudio", SITEID);
+    snprintf(clientID, 100, "%sAudio", SITEID);
     asyncClient.connect();
-    audioServer.connect(clientID, MQTT_USER, MQTT_PASS);
+    audioServer.connect(clientID, config.mqtt_user.c_str(), config.mqtt_pass.c_str());
   }
 
   void run(void) override {
@@ -165,6 +166,7 @@ class MQTTDisconnected : public StateMachine {
       currentMillis = millis();
       if (currentMillis - startMillis > 5000) {
         Serial.println("Connect failed, retry");
+        Serial.printf("Audio connected: %d, Async connected: %d\n", audioServer.connected(), asyncClient.connected());
         transit<MQTTDisconnected>();
       }      
     }
