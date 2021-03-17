@@ -185,7 +185,7 @@ class WifiConnected : public StateMachine
 {
   void entry(void) override {
     Serial.println("Enter WifiConnected");
-    Serial.println("Connected to Wifi with IP: " + WiFi.localIP().toString());
+    Serial.printf("Connected to Wifi with IP: %s, SSID: %s, BSSID: %s, RSSI: %d\n", WiFi.localIP().toString().c_str(), WiFi.SSID().c_str(), WiFi.BSSIDstr().c_str(), WiFi.RSSI());
     xEventGroupClearBits(audioGroup, PLAY);
     xEventGroupClearBits(audioGroup, STREAM);
     device->updateBrightness(config.brightness);
