@@ -8,6 +8,7 @@ device_type=0
 [Wifi]
 ssid=SSID
 password=password
+;scanStrongestAP=true ; use if device connects to a non-optimal AP
 
 ;uncomment next 4 lines and fill with your own values if you want to use a static ip address
 ;ip=192.168.xxx.xxx
