@@ -30,8 +30,8 @@ class HotwordDetected : public StateMachine
     device->updateBrightness(config.hotword_brightness);
     if (xSemaphoreTake(wbSemaphore, (TickType_t)10000) == pdTRUE) {
       device->updateColors(COLORS_HOTWORD);
+      xSemaphoreGive(wbSemaphore);
     }
-    xSemaphoreGive(wbSemaphore);
     initHeader(device->readSize, device->width, device->rate);
     xEventGroupSetBits(audioGroup, STREAM);
   }
@@ -67,8 +67,8 @@ class Idle : public StateMachine
     device->updateBrightness(config.brightness);
     if (xSemaphoreTake(wbSemaphore, (TickType_t)10000) == pdTRUE) {
       device->updateColors(COLORS_IDLE);
+      xSemaphoreGive(wbSemaphore);
     }
-    xSemaphoreGive(wbSemaphore);
     initHeader(device->readSize, device->width, device->rate);
     xEventGroupSetBits(audioGroup, STREAM);
   }
