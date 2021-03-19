@@ -191,6 +191,9 @@ String processor(const String& var){
   if (var == "GAIN") {
       return String(config.gain);
   }
+  if (var == "SITEID") {
+      return SITEID;
+  }
   return String();
 }
 
