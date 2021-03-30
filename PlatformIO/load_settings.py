@@ -48,6 +48,9 @@ if os.path.isfile(settings):
 
         staticIp = True
 
+    if ("scanStrongestAP" in config[sectionWifi]) :
+        cpp_defines.append(("SCAN_STRONGEST_AP", "\\\"" + config[sectionWifi]["scanStrongestAP"] + "\\\""))
+
     env.Append(CPPDEFINES=cpp_defines)
 
     if (config[sectionOta]["method"] == "upload") :

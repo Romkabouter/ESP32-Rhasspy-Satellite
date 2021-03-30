@@ -245,7 +245,44 @@ class WifiDisconnected : public StateMachine
 
     WiFi.onEvent(WiFiEvent);
     WiFi.mode(WIFI_STA);
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
+
+    // find best AP (BSSID) if there are several AP for a given SSID
+    // https://github.com/arendst/Tasmota/blob/db615c5b0ba0053c3991cf40dd47b0d484ac77ae/tasmota/support_wifi.ino#L261
+    // https://esp32.com/viewtopic.php?t=18979
+    #if defined(SCAN_STRONGEST_AP)
+      Serial.println("WiFi scan start");
+      int n = WiFi.scanNetworks(); // WiFi.scanNetworks will return the number of networks found
+      // or WIFI_SCAN_RUNNING   (-1), WIFI_SCAN_FAILED    (-2)
+
+      Serial.printf("WiFi scan done, result %d\n", n);
+      if (n <= 0) {
+        Serial.println("error or no networks found");
+      } else {
+        for (int i = 0; i < n; ++i) {
+          // Print metrics for each network found
+          Serial.printf("%d: BSSID: %s  %ddBm, %d%% %s, %s (%d)\n", i + 1, WiFi.BSSIDstr(i).c_str(), WiFi.RSSI(i), constrain(2 * (WiFi.RSSI(i) + 100), 0, 100),
+            (WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? "open     " : "encrypted", WiFi.SSID(i).c_str(), WiFi.channel(i));
+        }
+      }
+      Serial.println();
+
+      // find first that matches SSID. Expect results to be sorted by signal strength.
+      int i = 0;
+      while ( String(WIFI_SSID) != String(WiFi.SSID(i)) && (i < n)) {
+        i++;
+      }
+
+      if (i == n || n < 0) {
+        Serial.println("No network with SSID " WIFI_SSID " found!");
+        WiFi.begin(WIFI_SSID, WIFI_PASS); // try basic method anyway
+      } else {
+        Serial.printf("SSID match found at index: %d\n", i + 1);
+        WiFi.begin(WIFI_SSID, WIFI_PASS, 0, WiFi.BSSID(i)); // pass selected BSSID
+      }
+    #else
+      WiFi.begin(WIFI_SSID, WIFI_PASS);
+    #endif
+
     while (WiFi.waitForConnectResult() != WL_CONNECTED) {
         retryCount++;
         if (retryCount > 2) {

@@ -3,7 +3,7 @@ const char index_html[] PROGMEM = R"=====(
 <!DOCTYPE html>
 <html>
 <head>
-<title>Satellite Configuration</title>
+<title>Satellite Configuration - %SITEID%</title>
 <meta http-equiv="content-type" content="text/html; charset=ISO-8859-1">
 <style>
 * {box-sizing: border-box;}
