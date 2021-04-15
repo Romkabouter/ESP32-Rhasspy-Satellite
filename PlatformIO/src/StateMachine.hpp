@@ -77,7 +77,7 @@ class Idle : public StateMachine
     if (device->isHotwordDetected() && !hotwordDetected) {
       hotwordDetected = true;
       //start session by publishing a message to hermes/dialogueManager/startSession
-      std::string message = "{\"init\":{\"type\":\"action\",\"canBeEnqueued\": false},\"siteId\":\"" + std::string(SITEID) + "\"}";
+      std::string message = "{\"init\":{\"type\":\"action\",\"canBeEnqueued\": false},\"siteId\":\"" + std::string(config.siteid) + "\"}";
       asyncClient.publish("hermes/dialogueManager/startSession", 0, false, message.c_str());
     }
   }
@@ -109,7 +109,7 @@ class Idle : public StateMachine
 class MQTTConnected : public StateMachine {
   void entry(void) override {
     Serial.println("Enter MQTTConnected");
-    Serial.printf("Connected as %s\r\n",SITEID);
+    Serial.printf("Connected as %s\r\n",config.siteid.c_str());
     publishDebug("Connected to asynch MQTT!");
     asyncClient.subscribe(playBytesTopic.c_str(), 0);
     asyncClient.subscribe(hotwordTopic.c_str(), 0);
@@ -149,12 +149,12 @@ class MQTTDisconnected : public StateMachine {
       mqttInitialized = true;
     }
     Serial.printf("Connecting MQTT: %s, %d\n", config.mqtt_host.c_str(), config.mqtt_port);
-    asyncClient.setClientId(SITEID);
+    asyncClient.setClientId(config.siteid.c_str());
     asyncClient.setServer(config.mqtt_host.c_str(), config.mqtt_port);
     asyncClient.setCredentials(config.mqtt_user.c_str(), config.mqtt_pass.c_str());
     audioServer.setServer(config.mqtt_host.c_str(), config.mqtt_port);
     char clientID[100];
-    snprintf(clientID, 100, "%sAudio", SITEID);
+    snprintf(clientID, 100, "%sAudio", config.siteid.c_str());
     asyncClient.connect();
     audioServer.connect(clientID, config.mqtt_user.c_str(), config.mqtt_pass.c_str());
   }
@@ -350,7 +350,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
       // Check if this is for us
       if (!err) {
         JsonObject root = doc.as<JsonObject>();
-        if (root["siteId"] == SITEID 
+        if (root["siteId"] == config.siteid.c_str()
           && root.containsKey("reason")
           && root["reason"] == "dialogueSession") {
             send_event(HotwordDetectedEvent());
@@ -363,7 +363,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
       // Check if this is for us
       if (!err) {
         JsonObject root = doc.as<JsonObject>();
-        if (root["siteId"] == SITEID 
+        if (root["siteId"] == config.siteid.c_str() 
           && root.containsKey("reason")
           && root["reason"] == "dialogueSession") {
             send_event(IdleEvent());
@@ -371,7 +371,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
       }
     } else if (topicstr.find("playBytes") != std::string::npos) {
       std::vector<std::string> topicparts = explode("/", topicstr);
-      finishedMsg = "{\"id\":\"" + topicparts[4] + "\",\"siteId\":\"" + SITEID + "\",\"sessionId\":null}";
+      finishedMsg = "{\"id\":\"" + topicparts[4] + "\",\"siteId\":\"" + config.siteid + "\",\"sessionId\":null}";
       for (int i = 0; i < len; i++) {
         while (audioData.isFull()) {
           if (xEventGroupGetBits(audioGroup) != PLAY) {

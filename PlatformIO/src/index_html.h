@@ -38,7 +38,11 @@ input::-moz-focus-inner,input::-moz-focus-outer {border: 0;}
 </head>
 <body>
   <form action="/" method="post">
-    <h2>Satellite Configuration</h2>
+    <h2>Satellite Configuration - %SITEID%</h2>
+    <div class="input-container">
+      <label for="siteid">siteID:&nbsp;</label>
+      <input class="input-field" type="text" placeholder="siteId" name="siteid" value="%SITEID%">
+    </div>
     <div class="input-container">
       <label for="mqtt_host">MQTT hostname:&nbsp;</label>
       <input class="input-field" type="text" placeholder="MQTT IP" name="mqtt_host" value="%MQTT_HOST%">

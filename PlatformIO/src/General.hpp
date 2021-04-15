@@ -20,6 +20,7 @@ enum {
 AsyncWebServer server(80);
 //Configuration defaults
 struct Config {
+  std::string siteid = SITEID;
   std::string mqtt_host = MQTT_HOST;
   int mqtt_port = MQTT_PORT;
   std::string mqtt_user = MQTT_USER;
@@ -58,14 +59,14 @@ int retryCount = 0;
 int I2SMode = -1;
 bool mqttConnected = false;
 bool DEBUG = false;
-std::string audioFrameTopic = std::string("hermes/audioServer/") + SITEID + std::string("/audioFrame");
-std::string playBytesTopic = std::string("hermes/audioServer/") + SITEID + std::string("/playBytes/#");
-std::string playFinishedTopic = std::string("hermes/audioServer/") + SITEID + std::string("/playFinished");
+std::string audioFrameTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/audioFrame");
+std::string playBytesTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/playBytes/#");
+std::string playFinishedTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/playFinished");
 std::string hotwordTopic = "hermes/hotword/#";
-std::string audioTopic = SITEID + std::string("/audio");
-std::string ledTopic = SITEID + std::string("/led");
-std::string debugTopic = SITEID + std::string("/debug");
-std::string restartTopic = SITEID + std::string("/restart");
+std::string audioTopic = config.siteid + std::string("/audio");
+std::string ledTopic = config.siteid + std::string("/led");
+std::string debugTopic = config.siteid + std::string("/debug");
+std::string restartTopic = config.siteid + std::string("/restart");
 AsyncMqttClient asyncClient; 
 WiFiClient net;
 PubSubClient audioServer(net); 
@@ -192,7 +193,7 @@ String processor(const String& var){
       return String(config.gain);
   }
   if (var == "SITEID") {
-      return SITEID;
+      return String(config.siteid.c_str());
   }
   return String();
 }
@@ -210,6 +211,13 @@ void handleFSf ( AsyncWebServerRequest* request, const String& route ) {
             for(int i=0;i<params;i++){
                 AsyncWebParameter* p = request->getParam(i);
                 Serial.printf("Parameter %s, value %s\r\n", p->name().c_str(), p->value().c_str());
+                if(p->name() == "siteid"){
+                    if (config.siteid != std::string(p->value().c_str())) {
+                        Serial.println("siteID changed");
+                        config.siteid = std::string(p->value().c_str());
+                        saveNeeded = true;
+                    }
+                }
                 if(p->name() == "mqtt_host"){
                     if (config.mqtt_host != std::string(p->value().c_str())) {
                         Serial.println("Mqtt host changed");
@@ -344,6 +352,7 @@ void loadConfiguration(const char *filename, Config &config) {
   } else {
     serializeJsonPretty(doc, Serial);
     Serial.println();  
+    config.siteid = doc.getMember("siteid").as<std::string>();
     config.mqtt_host = doc.getMember("mqtt_host").as<std::string>();
     config.mqtt_port = doc.getMember("mqtt_port").as<int>();
     config.mqtt_user = doc.getMember("mqtt_user").as<std::string>();
@@ -360,6 +369,13 @@ void loadConfiguration(const char *filename, Config &config) {
     device->setVolume(config.volume);
     config.gain = doc.getMember("gain").as<int>();
     device->setGain(config.gain);
+    audioFrameTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/audioFrame");
+    playBytesTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/playBytes/#");
+    playFinishedTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/playFinished");
+    audioTopic = config.siteid + std::string("/audio");
+    ledTopic = config.siteid + std::string("/led");
+    debugTopic = config.siteid + std::string("/debug");
+    restartTopic = config.siteid + std::string("/restart");
   }
   file.close();
 }
@@ -375,6 +391,7 @@ void saveConfiguration(const char *filename, Config &config) {
         return;
     }
     StaticJsonDocument<256> doc;
+    doc["siteid"] = config.siteid;
     doc["mqtt_host"] = config.mqtt_host;
     doc["mqtt_port"] = config.mqtt_port;
     doc["mqtt_user"] = config.mqtt_user;
