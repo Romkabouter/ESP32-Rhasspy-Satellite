@@ -4,3 +4,5 @@
 .vscode/launch.json
 .vscode/ipch
 settings.ini
+.clang_complete
+.gcc-flags.json

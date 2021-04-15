@@ -50,8 +50,8 @@
     - Add muting of output and switching of output port
    v4.4:
     - Fix distortion issues, caused by incorrect handling of incoming audio
-    - Added resampling using Speex, resamples 8000 and up and converts mono 
-      to stereo. 
+    - Added resampling using Speex, resamples 8000 and up and converts mono
+      to stereo.
    v4.5:
     - Support streaming audio
    v4.5.1:
@@ -82,6 +82,9 @@
     - Fix double creation of I2Stask
    v7.4
     - Added taskdelay for better stability on I2Stask
+    v7.5
+     - Added INMP441 & INMP441MAX98357A
+
 * ************************************************************************ */
 
 #include <Arduino.h>
@@ -92,18 +95,27 @@
 #define M5ATOMECHO 0
 #define MATRIXVOICE 1
 #define AUDIOKIT 2
+#define INMP441 3
+#define INMP441MAX98357A 4
+
 
 // This is where you can include your device, make sure to create a *device
-// The *device is used to call methods 
+// The *device is used to call methods
 #if DEVICE_TYPE == M5ATOMECHO
   #include "devices/M5AtomEcho.hpp"
   M5AtomEcho *device = new M5AtomEcho();
 #elif DEVICE_TYPE == MATRIXVOICE
   #include "devices/MatrixVoice.hpp"
-  MatrixVoice *device = new MatrixVoice();  
+  MatrixVoice *device = new MatrixVoice();
 #elif DEVICE_TYPE == AUDIOKIT
   #include "devices/AudioKit.hpp"
   AudioKit *device = new AudioKit();
+#elif DEVICE_TYPE == INMP441
+  #include "devices/Inmp441.hpp"
+  Inmp441 *device = new Inmp441();
+#elif DEVICE_TYPE == INMP441MAX98357A
+  #include "devices/Inmp441Max98357a.hpp"
+  Inmp441Max98357a *device = new Inmp441Max98357a();
 #endif
 
 #include <General.hpp>
@@ -159,7 +171,7 @@ void setup() {
       else if (error == OTA_END_ERROR)
         Serial.println("End Failed");
     });
- 
+
   fsm::start();
 
   server.on("/", handleRequest);
