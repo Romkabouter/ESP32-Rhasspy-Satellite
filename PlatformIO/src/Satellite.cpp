@@ -82,8 +82,11 @@
     - Fix double creation of I2Stask
    v7.4
     - Added taskdelay for better stability on I2Stask
-    v7.5
-     - Added INMP441 & INMP441MAX98357A
+   v7.5
+    - Support for hostnames in MQTT
+    - Now scans for strongest AP 
+    - Added INMP441 & INMP441MAX98357A
+    - Siteid can now be configured in webui
 
 * ************************************************************************ */
 
