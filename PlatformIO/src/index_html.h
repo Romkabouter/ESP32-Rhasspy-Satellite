@@ -102,13 +102,6 @@ input::-moz-focus-inner,input::-moz-focus-outer {border: 0;}
       </div>
     </div>
     <div class="input-container">
-      <label for="hotword_detection">Hotword detection:&nbsp;</label>
-      <select name="hotword_detection">
-        <option value="0" %HW_LOCAL%>Local</option>
-        <option value="1" %HW_REMOTE%>Remote</option>
-      </select>
-    </div>
-    <div class="input-container">
       <label for="gain">Gain:&nbsp;</label>
       <div class="range-slider">  
         <input type="range" min="1" max="8" value="%GAIN%" class="range-slider__range" name="gain">

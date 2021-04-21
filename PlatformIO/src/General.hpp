@@ -364,7 +364,8 @@ void loadConfiguration(const char *filename, Config &config) {
     config.brightness = doc.getMember("brightness").as<int>();
     device->updateBrightness(config.brightness);
     config.hotword_brightness = doc.getMember("hotword_brightness").as<int>();
-    config.hotword_detection = doc.getMember("hotword_detection").as<int>();
+    //config.hotword_detection = doc.getMember("hotword_detection").as<int>();
+    config.hotword_detection = 1;
     config.volume = doc.getMember("volume").as<int>();
     device->setVolume(config.volume);
     config.gain = doc.getMember("gain").as<int>();
@@ -405,9 +406,9 @@ void saveConfiguration(const char *filename, Config &config) {
     doc["volume"] = config.volume;
     doc["gain"] = config.gain;
     if (serializeJson(doc, file) == 0) {
-         Serial.println(F("Failed to write to file"));
+        Serial.println(F("Failed to write to file"));
     }
     file.close();
-    loadConfiguration(filename, config);
-    audioServer.disconnect();
+    Serial.println("Configuration saved! Rebooting");
+    ESP.restart();    
 }

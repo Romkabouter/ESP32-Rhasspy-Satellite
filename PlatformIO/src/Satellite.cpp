@@ -87,6 +87,9 @@
     - Now scans for strongest AP 
     - Added INMP441 & INMP441MAX98357A
     - Siteid can now be configured in webui
+   v7.5.1
+    - Saving the configuration now reboots due to instablility issue in disconnecting MQTT
+    - Remove hotword method from UI and hard setting to REMOTE until local works again
 
 * ************************************************************************ */
 
