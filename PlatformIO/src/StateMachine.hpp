@@ -185,7 +185,11 @@ class WifiConnected : public StateMachine
 {
   void entry(void) override {
     Serial.println("Enter WifiConnected");
+#if ESP_TYPE == ESP32_POE_ISO
+    Serial.printf("Connected to LAN with IP: %s, \n", ETH.localIP().toString().c_str());
+#else
     Serial.printf("Connected to Wifi with IP: %s, SSID: %s, BSSID: %s, RSSI: %d\n", WiFi.localIP().toString().c_str(), WiFi.SSID().c_str(), WiFi.BSSIDstr().c_str(), WiFi.RSSI());
+#endif
     xEventGroupClearBits(audioGroup, PLAY);
     xEventGroupClearBits(audioGroup, STREAM);
     device->updateBrightness(config.brightness);
@@ -219,6 +223,15 @@ class WifiDisconnected : public StateMachine
     Serial.println("Enter WifiDisconnected");
     Serial.printf("Total heap: %d\r\n", ESP.getHeapSize());
     Serial.printf("Free heap: %d\r\n", ESP.getFreeHeap());
+
+
+#if ESP_TYPE == ESP32_POE_ISO
+
+    WiFi.onEvent(WiFiEvent);
+    ETH.begin();
+
+#else
+
     device->updateBrightness(config.brightness);
     device->updateColors(COLORS_WIFI_DISCONNECTED);
     
@@ -292,6 +305,8 @@ class WifiDisconnected : public StateMachine
             Serial.println("Connection Failed! Retry...");
         }
     }
+#endif
+
   }
 
   void react(WifiConnectEvent const &) override { 
@@ -634,6 +649,43 @@ void initHeader(int readSize, int width, int rate) {
 
 void WiFiEvent(WiFiEvent_t event) {
     switch (event) {
+
+#if ESP_TYPE == ESP32_POE_ISO
+        case SYSTEM_EVENT_ETH_START:
+          Serial.println("ETH Started");
+          //set eth hostname here
+          ETH.setHostname(HOSTNAME);
+          break;
+        case SYSTEM_EVENT_ETH_CONNECTED:
+          Serial.println("ETH Connected");
+          break;
+        case SYSTEM_EVENT_ETH_GOT_IP:
+          Serial.print("ETH MAC: ");
+          Serial.print(ETH.macAddress());
+          Serial.print(", IPv4: ");
+          Serial.print(ETH.localIP());
+          if (ETH.fullDuplex()) {
+            Serial.print(", FULL_DUPLEX");
+          }
+          Serial.print(", ");
+          Serial.print(ETH.linkSpeed());
+          Serial.println("Mbps");
+            send_event(WifiConnectEvent());
+          break;
+        case SYSTEM_EVENT_ETH_DISCONNECTED:
+          Serial.println("ETH Disconnected");
+           send_event(WifiDisconnectEvent());
+          break;
+        case SYSTEM_EVENT_ETH_STOP:
+          Serial.println("ETH Stopped");
+          send_event(WifiDisconnectEvent());
+          break;
+        default:
+          Serial.println("ETH Event");
+          break;
+
+#else
+
         case SYSTEM_EVENT_STA_START:
             WiFi.setHostname(HOSTNAME);
             break;
@@ -645,5 +697,6 @@ void WiFiEvent(WiFiEvent_t event) {
             break;
         default:
             break;
+#endif
     }
 }
