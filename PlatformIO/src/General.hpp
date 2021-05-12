@@ -1,8 +1,6 @@
 #include <tinyfsm.hpp>
 #include <Arduino.h>
 
-#include "esp_types.h"
-
 #if ESP_TYPE == ESP32_POE_ISO
 #include <ETH.h>
 #else

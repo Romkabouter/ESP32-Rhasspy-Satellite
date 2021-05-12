@@ -1,6 +1,5 @@
 #include <driver/i2s.h>
 #include "IndicatorLight.h"
-#include "../esp_types.h"
 
 // I2S pins on ESp32cam MIC
 // GPIO2 <--> WS
@@ -30,7 +29,7 @@
 #define I2S_SAMPLE_BITS   (16)
 #define I2S_READ_LEN     512
 
-#if ESP_TYPE != ESP32_POE_ISO
+#if ESP_TYPE == ESP32_POE_ISO
 // LEDs
 #define LED_FLASH 4
 #define LED 5
