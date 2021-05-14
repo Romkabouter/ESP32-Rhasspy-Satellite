@@ -1,6 +1,12 @@
 #include <tinyfsm.hpp>
 #include <Arduino.h>
+
+#if ESP_TYPE == ESP32_POE_ISO
+#include <ETH.h>
+#else
 #include <WiFi.h>
+#endif
+
 #include <AsyncMqttClient.h>
 #include <PubSubClient.h>
 #include "RingBuf.h"

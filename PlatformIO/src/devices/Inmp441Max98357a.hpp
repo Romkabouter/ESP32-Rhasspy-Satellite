@@ -1,7 +1,6 @@
 #include <driver/i2s.h>
 #include "IndicatorLight.h"
 
-
 // I2S pins on ESp32cam MIC
 // GPIO2 <--> WS
 // GPIO14 <--> SCK
@@ -17,17 +16,28 @@
 // GPIO12 <--> DIN
 #define I2S_LRC 16
 #define I2S_BCLK 13
+
+#if ESP_TYPE == ESP32_POE_ISO
+#define I2S_DIN 3
+#else
 #define I2S_DIN 12
+#endif
+
 #define I2S_PORT_TX I2S_NUM_1
 
 #define I2S_SAMPLE_RATE   (16000)
 #define I2S_SAMPLE_BITS   (16)
 #define I2S_READ_LEN     512
 
+#if ESP_TYPE == ESP32_POE_ISO
+// LEDs
+#define LED_FLASH 4
+#define LED 5
+#else
 // LEDs
 #define LED_FLASH 4
 #define LED 33
-
+#endif
 
 class Inmp441Max98357a : public Device
 {
@@ -51,36 +61,36 @@ void Inmp441Max98357a::init() {
   Serial.printf("Connect to Inmp441... \n");
 
   // Speakers
-    i2s_config_t i2sConfig_tx = {
-        .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
-        .sample_rate = I2S_SAMPLE_RATE,
-        .bits_per_sample = i2s_bits_per_sample_t(I2S_SAMPLE_BITS),
-        .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
-        .communication_format = (i2s_comm_format_t)(I2S_COMM_FORMAT_I2S  | I2S_COMM_FORMAT_I2S_MSB),
-        .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
-        .dma_buf_count = 2,
-        .dma_buf_len = 512,
-       };
+  i2s_config_t i2sConfig_tx = {
+      .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
+      .sample_rate = I2S_SAMPLE_RATE,
+      .bits_per_sample = i2s_bits_per_sample_t(I2S_SAMPLE_BITS),
+      .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
+      .communication_format = (i2s_comm_format_t)(I2S_COMM_FORMAT_I2S  | I2S_COMM_FORMAT_I2S_MSB),
+      .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
+      .dma_buf_count = 2,
+      .dma_buf_len = 512,
+  };
 
-        i2s_pin_config_t pin_config_tx = {
-          .bck_io_num = I2S_BCLK,
-          .ws_io_num = I2S_LRC,
-          .data_out_num = I2S_DIN,
-          .data_in_num = -1
-        };
+  i2s_pin_config_t pin_config_tx = {
+    .bck_io_num = I2S_BCLK,
+    .ws_io_num = I2S_LRC,
+    .data_out_num = I2S_DIN,
+    .data_in_num = -1
+  };
 
-        err += i2s_driver_install(I2S_PORT_TX, &i2sConfig_tx, 0, NULL);
-        if (err != ESP_OK) {
-           Serial.printf("Failed installing headphone driver: %d\n", err);
-           while (true);
-        }
+  err += i2s_driver_install(I2S_PORT_TX, &i2sConfig_tx, 0, NULL);
+  if (err != ESP_OK) {
+      Serial.printf("Failed installing headphone driver: %d\n", err);
+      while (true);
+  }
 
-        err += i2s_set_pin(I2S_PORT_TX, &pin_config_tx);
-        if (err != ESP_OK) {
-          Serial.printf("Failed setting headphone pin: %d\n", err);
-          while (true);
-        }
-        Serial.println("I2S headphone driver installed.\n");
+  err += i2s_set_pin(I2S_PORT_TX, &pin_config_tx);
+  if (err != ESP_OK) {
+    Serial.printf("Failed setting headphone pin: %d\n", err);
+    while (true);
+  }
+  Serial.println("I2S headphone driver installed.\n");
 
 
   i2s_config_t i2s_config = {
@@ -158,7 +168,7 @@ bool Inmp441Max98357a::readAudio(uint8_t *data, size_t size) {
     uint32_t j = 0;
     uint32_t dac_value = 0;
     for (int i = 0; i < size; i += 2) {
-        dac_value = ((((uint16_t) (i2s_read_buff[i + 1] & 0xf) << 8) | ((i2s_read_buff[i + 0]))));
+        dac_value = ((((uint16_t) (i2s_read_buff[i + 1] & 0xff) << 8) | ((i2s_read_buff[i + 0]))));
         data[j++] = 0;
         data[j++] = dac_value * 256 / 2048;
     }

@@ -4,6 +4,10 @@ deployhost=192.168.43.24
 siteId=satellite
 ;supported: M5ATOMECHO=0, MATRIXVOICE=1, AUDIOKIT=2, INMP441=3, INMP441MAX98357A=4
 device_type=4
+; supported: ESP_OTHER=0, ESP32_POE_ISO=1
+; note: ESP32_POE_ISO is only tested with device_type INMP441MAX98357A=4 
+;       GPIO 12 is not accessible, GPIO 3 is used instead.
+esp_type=0
 
 [Wifi]
 ssid=SSID

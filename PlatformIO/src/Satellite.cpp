@@ -95,7 +95,16 @@
 
 #include <Arduino.h>
 #include <ArduinoOTA.h>
+
+#define ESP_OTHER 0
+#define ESP32_POE_ISO 1
+
+#if ESP_TYPE == ESP32_POE_ISO
+#include <ETH.h>
+#else
 #include <WiFi.h>
+#endif
+
 #include "device.h"
 
 #define M5ATOMECHO 0
