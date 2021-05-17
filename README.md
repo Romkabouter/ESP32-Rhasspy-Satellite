@@ -28,6 +28,12 @@ Support for Snips is dropped.
 
 [Audio Kit](audiokit.md)
 
+[INMP441](inmp441.md)
+
+[INMP441MAX98357A](inmp441max98357a.md)
+
+[ESP32-POE-ISO](Esp32-poe-iso.md)
+
 ## MQTT commands
 
 The ESP32 Satellite is subscribed to various topics.
