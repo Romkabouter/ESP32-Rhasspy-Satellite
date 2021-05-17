@@ -1,6 +1,4 @@
 #include <driver/i2s.h>
-#include "IndicatorLight.h"
-
 // I2S pins on ESp32cam MIC
 // GPIO2 <--> WS
 // GPIO14 <--> SCK
@@ -16,36 +14,31 @@
 // GPIO12 <--> DIN
 #define I2S_LRC 16
 #define I2S_BCLK 13
-#define I2S_DIN 12
-
+#define I2S_DIN 3
 #define I2S_PORT_TX I2S_NUM_1
 
 #define I2S_SAMPLE_RATE   (16000)
 #define I2S_SAMPLE_BITS   (16)
 #define I2S_READ_LEN     512
-// LEDs
-#define LED_FLASH 4
-#define LED 33
 
-class Inmp441Max98357a : public Device
+class Esp32_poe_iso : public Device
 {
   public:
-    Inmp441Max98357a();
+    Esp32_poe_iso();
     void init();
     void updateColors(int colors);
     bool readAudio(uint8_t *data, size_t size);
     void setWriteMode(int sampleRate, int bitDepth, int numChannels);
     void writeAudio(uint8_t *data, size_t size, size_t *bytes_written);
-    IndicatorLight *indicator_light = new IndicatorLight(LED_FLASH);
   private:
     char* i2s_read_buff = (char*) calloc(I2S_READ_LEN, sizeof(char));
 };
 
-Inmp441Max98357a::Inmp441Max98357a() {};
+Esp32_poe_iso::Esp32_poe_iso() {};
 
-void Inmp441Max98357a::init() {
+void Esp32_poe_iso::init() {
 
-    esp_err_t err = ESP_OK;
+  esp_err_t err = ESP_OK;
   Serial.printf("Connect to Inmp441... \n");
 
   // Speakers
@@ -116,27 +109,7 @@ void Inmp441Max98357a::init() {
   return;
 }
 
-
-void Inmp441Max98357a::updateColors(int colors)
-{
-    indicator_light->setState(OFF);
-    switch (colors)
-    {
-    case COLORS_HOTWORD:
-        indicator_light->setState(PULSING);
-    case COLORS_WIFI_CONNECTED:
-        break;
-    case COLORS_WIFI_DISCONNECTED:
-        break;
-    case COLORS_IDLE:
-        break;
-    case COLORS_OTA:
-        break;
-    }
-};
-
-
-void Inmp441Max98357a::setWriteMode(int sampleRate, int bitDepth, int numChannels)
+void Esp32_poe_iso::setWriteMode(int sampleRate, int bitDepth, int numChannels)
 {
     if (sampleRate > 0)
     {
@@ -144,13 +117,12 @@ void Inmp441Max98357a::setWriteMode(int sampleRate, int bitDepth, int numChannel
     }
 }
 
-
-void Inmp441Max98357a::writeAudio(uint8_t *data, size_t size, size_t *bytes_written) {
+void Esp32_poe_iso::writeAudio(uint8_t *data, size_t size, size_t *bytes_written) {
   i2s_write(I2S_PORT_TX, data, size, bytes_written, portMAX_DELAY);
 }
 
 
-bool Inmp441Max98357a::readAudio(uint8_t *data, size_t size) {
+bool Esp32_poe_iso::readAudio(uint8_t *data, size_t size) {
     size_t bytes_read;
     i2s_read(I2S_PORT, (void*) i2s_read_buff, size, &bytes_read, portMAX_DELAY);
     uint32_t j = 0;

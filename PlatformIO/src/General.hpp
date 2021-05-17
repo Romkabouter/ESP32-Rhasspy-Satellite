@@ -1,10 +1,10 @@
 #include <tinyfsm.hpp>
 #include <Arduino.h>
 
-#if ESP_TYPE == ESP32_POE_ISO
-#include <ETH.h>
+#if NETWORK_TYPE == NETWORK_ETHERNET
+    #include <ETH.h>
 #else
-#include <WiFi.h>
+    #include <WiFi.h>
 #endif
 
 #include <AsyncMqttClient.h>

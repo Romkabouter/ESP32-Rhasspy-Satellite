@@ -185,11 +185,11 @@ class WifiConnected : public StateMachine
 {
   void entry(void) override {
     Serial.println("Enter WifiConnected");
-#if ESP_TYPE == ESP32_POE_ISO
-    Serial.printf("Connected to LAN with IP: %s, \n", ETH.localIP().toString().c_str());
-#else
-    Serial.printf("Connected to Wifi with IP: %s, SSID: %s, BSSID: %s, RSSI: %d\n", WiFi.localIP().toString().c_str(), WiFi.SSID().c_str(), WiFi.BSSIDstr().c_str(), WiFi.RSSI());
-#endif
+    #if NETWORK_TYPE == NETWORK_ETHERNET
+        Serial.printf("Connected to LAN with IP: %s, \n", ETH.localIP().toString().c_str());
+    #else
+        Serial.printf("Connected to Wifi with IP: %s, SSID: %s, BSSID: %s, RSSI: %d\n", WiFi.localIP().toString().c_str(), WiFi.SSID().c_str(), WiFi.BSSIDstr().c_str(), WiFi.RSSI());
+    #endif
     xEventGroupClearBits(audioGroup, PLAY);
     xEventGroupClearBits(audioGroup, STREAM);
     device->updateBrightness(config.brightness);
@@ -224,88 +224,84 @@ class WifiDisconnected : public StateMachine
     Serial.printf("Total heap: %d\r\n", ESP.getHeapSize());
     Serial.printf("Free heap: %d\r\n", ESP.getFreeHeap());
 
+    #if NETWORK_TYPE == NETWORK_ETHERNET
+      WiFi.onEvent(WiFiEvent);
+      ETH.begin();
+    #else
+      device->updateBrightness(config.brightness);
+      device->updateColors(COLORS_WIFI_DISCONNECTED);
+      
+      // Set static ip address
+      #if defined(HOST_IP) && defined(HOST_GATEWAY)  && defined(HOST_SUBNET)  && defined(HOST_DNS1)
+        IPAddress ip;
+        IPAddress gateway;
+        IPAddress subnet;
+        IPAddress dns1;
+        IPAddress dns2;
 
-#if ESP_TYPE == ESP32_POE_ISO
+        ip.fromString(HOST_IP);
+        gateway.fromString(HOST_GATEWAY);
+        subnet.fromString(HOST_SUBNET);
+        dns1.fromString(HOST_DNS1);
 
-    WiFi.onEvent(WiFiEvent);
-    ETH.begin();
+        #ifdef HOST_DNS2
+          dns2.fromString(HOST_DNS2);
+        #endif
 
-#else
-
-    device->updateBrightness(config.brightness);
-    device->updateColors(COLORS_WIFI_DISCONNECTED);
-    
-    // Set static ip address
-    #if defined(HOST_IP) && defined(HOST_GATEWAY)  && defined(HOST_SUBNET)  && defined(HOST_DNS1)
-      IPAddress ip;
-      IPAddress gateway;
-      IPAddress subnet;
-      IPAddress dns1;
-      IPAddress dns2;
-
-      ip.fromString(HOST_IP);
-      gateway.fromString(HOST_GATEWAY);
-      subnet.fromString(HOST_SUBNET);
-      dns1.fromString(HOST_DNS1);
-
-      #ifdef HOST_DNS2
-        dns2.fromString(HOST_DNS2);
+        Serial.printf("Set static ip: %s, gateway: %s, subnet: %s, dns1: %s, dns2: %s\r\n", ip.toString().c_str(), gateway.toString().c_str(), subnet.toString().c_str(), dns1.toString().c_str(), dns2.toString().c_str());
+        WiFi.config(ip, gateway, subnet, dns1, dns2);
       #endif
 
-      Serial.printf("Set static ip: %s, gateway: %s, subnet: %s, dns1: %s, dns2: %s\r\n", ip.toString().c_str(), gateway.toString().c_str(), subnet.toString().c_str(), dns1.toString().c_str(), dns2.toString().c_str());
-      WiFi.config(ip, gateway, subnet, dns1, dns2);
-    #endif
+      WiFi.onEvent(WiFiEvent);
+      WiFi.mode(WIFI_STA);
 
-    WiFi.onEvent(WiFiEvent);
-    WiFi.mode(WIFI_STA);
+      // find best AP (BSSID) if there are several AP for a given SSID
+      // https://github.com/arendst/Tasmota/blob/db615c5b0ba0053c3991cf40dd47b0d484ac77ae/tasmota/support_wifi.ino#L261
+      // https://esp32.com/viewtopic.php?t=18979
+      #if defined(SCAN_STRONGEST_AP)
+        Serial.println("WiFi scan start");
+        int n = WiFi.scanNetworks(); // WiFi.scanNetworks will return the number of networks found
+        // or WIFI_SCAN_RUNNING   (-1), WIFI_SCAN_FAILED    (-2)
 
-    // find best AP (BSSID) if there are several AP for a given SSID
-    // https://github.com/arendst/Tasmota/blob/db615c5b0ba0053c3991cf40dd47b0d484ac77ae/tasmota/support_wifi.ino#L261
-    // https://esp32.com/viewtopic.php?t=18979
-    #if defined(SCAN_STRONGEST_AP)
-      Serial.println("WiFi scan start");
-      int n = WiFi.scanNetworks(); // WiFi.scanNetworks will return the number of networks found
-      // or WIFI_SCAN_RUNNING   (-1), WIFI_SCAN_FAILED    (-2)
-
-      Serial.printf("WiFi scan done, result %d\n", n);
-      if (n <= 0) {
-        Serial.println("error or no networks found");
-      } else {
-        for (int i = 0; i < n; ++i) {
-          // Print metrics for each network found
-          Serial.printf("%d: BSSID: %s  %ddBm, %d%% %s, %s (%d)\n", i + 1, WiFi.BSSIDstr(i).c_str(), WiFi.RSSI(i), constrain(2 * (WiFi.RSSI(i) + 100), 0, 100),
-            (WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? "open     " : "encrypted", WiFi.SSID(i).c_str(), WiFi.channel(i));
-        }
-      }
-      Serial.println();
-
-      // find first that matches SSID. Expect results to be sorted by signal strength.
-      int i = 0;
-      while ( String(WIFI_SSID) != String(WiFi.SSID(i)) && (i < n)) {
-        i++;
-      }
-
-      if (i == n || n < 0) {
-        Serial.println("No network with SSID " WIFI_SSID " found!");
-        WiFi.begin(WIFI_SSID, WIFI_PASS); // try basic method anyway
-      } else {
-        Serial.printf("SSID match found at index: %d\n", i + 1);
-        WiFi.begin(WIFI_SSID, WIFI_PASS, 0, WiFi.BSSID(i)); // pass selected BSSID
-      }
-    #else
-      WiFi.begin(WIFI_SSID, WIFI_PASS);
-    #endif
-
-    while (WiFi.waitForConnectResult() != WL_CONNECTED) {
-        retryCount++;
-        if (retryCount > 2) {
-            Serial.println("Connection Failed! Rebooting...");
-            ESP.restart();
+        Serial.printf("WiFi scan done, result %d\n", n);
+        if (n <= 0) {
+          Serial.println("error or no networks found");
         } else {
-            Serial.println("Connection Failed! Retry...");
+          for (int i = 0; i < n; ++i) {
+            // Print metrics for each network found
+            Serial.printf("%d: BSSID: %s  %ddBm, %d%% %s, %s (%d)\n", i + 1, WiFi.BSSIDstr(i).c_str(), WiFi.RSSI(i), constrain(2 * (WiFi.RSSI(i) + 100), 0, 100),
+              (WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? "open     " : "encrypted", WiFi.SSID(i).c_str(), WiFi.channel(i));
+          }
         }
-    }
-#endif
+        Serial.println();
+
+        // find first that matches SSID. Expect results to be sorted by signal strength.
+        int i = 0;
+        while ( String(WIFI_SSID) != String(WiFi.SSID(i)) && (i < n)) {
+          i++;
+        }
+
+        if (i == n || n < 0) {
+          Serial.println("No network with SSID " WIFI_SSID " found!");
+          WiFi.begin(WIFI_SSID, WIFI_PASS); // try basic method anyway
+        } else {
+          Serial.printf("SSID match found at index: %d\n", i + 1);
+          WiFi.begin(WIFI_SSID, WIFI_PASS, 0, WiFi.BSSID(i)); // pass selected BSSID
+        }
+      #else
+        WiFi.begin(WIFI_SSID, WIFI_PASS);
+      #endif
+
+      while (WiFi.waitForConnectResult() != WL_CONNECTED) {
+          retryCount++;
+          if (retryCount > 2) {
+              Serial.println("Connection Failed! Rebooting...");
+              ESP.restart();
+          } else {
+              Serial.println("Connection Failed! Retry...");
+          }
+      }
+    #endif
 
   }
 
@@ -650,7 +646,7 @@ void initHeader(int readSize, int width, int rate) {
 void WiFiEvent(WiFiEvent_t event) {
     switch (event) {
 
-#if ESP_TYPE == ESP32_POE_ISO
+      #if NETWORK_TYPE == NETWORK_ETHERNET
         case SYSTEM_EVENT_ETH_START:
           Serial.println("ETH Started");
           //set eth hostname here
@@ -683,9 +679,7 @@ void WiFiEvent(WiFiEvent_t event) {
         default:
           Serial.println("ETH Event");
           break;
-
-#else
-
+      #else
         case SYSTEM_EVENT_STA_START:
             WiFi.setHostname(HOSTNAME);
             break;
@@ -697,6 +691,6 @@ void WiFiEvent(WiFiEvent_t event) {
             break;
         default:
             break;
-#endif
+      #endif
     }
 }

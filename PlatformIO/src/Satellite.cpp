@@ -95,14 +95,13 @@
 
 #include <Arduino.h>
 #include <ArduinoOTA.h>
+#define NETWORK_WIFI 0
+#define NETWORK_ETHERNET 1
 
-#define ESP_OTHER 0
-#define ESP32_POE_ISO 1
-
-#if ESP_TYPE == ESP32_POE_ISO
-#include <ETH.h>
+#if NETWORK_TYPE == NETWORK_ETHERNET
+  #include <ETH.h>
 #else
-#include <WiFi.h>
+  #include <WiFi.h>
 #endif
 
 #include "device.h"
@@ -112,6 +111,7 @@
 #define AUDIOKIT 2
 #define INMP441 3
 #define INMP441MAX98357A 4
+#define ESP32_POE_ISO 5
 
 
 // This is where you can include your device, make sure to create a *device
@@ -131,6 +131,9 @@
 #elif DEVICE_TYPE == INMP441MAX98357A
   #include "devices/Inmp441Max98357a.hpp"
   Inmp441Max98357a *device = new Inmp441Max98357a();
+#elif DEVICE_TYPE == ESP32_POE_ISO
+  #include "devices/Esp32_poe_iso.hpp"
+  Esp32_poe_iso *device = new Esp32_poe_iso();
 #endif
 
 #include <General.hpp>
