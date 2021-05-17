@@ -26,7 +26,6 @@ class Esp32_poe_iso : public Device
   public:
     Esp32_poe_iso();
     void init();
-    void updateColors(int colors);
     bool readAudio(uint8_t *data, size_t size);
     void setWriteMode(int sampleRate, int bitDepth, int numChannels);
     void writeAudio(uint8_t *data, size_t size, size_t *bytes_written);
