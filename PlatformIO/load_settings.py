@@ -23,7 +23,6 @@ if os.path.isfile(settings):
         ("OTA_PASS_HASH", "\\\"" + otaPasswordHash + "\\\""),
         ("SITEID", "\\\"" + config[sectionGeneral]["siteId"] + "\\\""),
         ("HOSTNAME", "\\\"" + config[sectionGeneral]["hostname"] + "\\\""),
-        ("MQTT_IP", "\\\"" + config[sectionMqtt]["ip"] + "\\\""),
         ("MQTT_PORT", config[sectionMqtt]["port"]),
         ("MQTT_USER", "\\\"" + config[sectionMqtt]["username"] + "\\\""),
         ("MQTT_PASS", "\\\"" + config[sectionMqtt]["password"] + "\\\""),
@@ -31,6 +30,12 @@ if os.path.isfile(settings):
         ("CONFIG_ASYNC_TCP_RUNNING_CORE", 1),
         ("DEVICE_TYPE", config[sectionGeneral]["device_type"])
     ]
+
+    # MQTT "ip" was replaced with "hostname" that can now be an IP or a DNS hostname of the MQTT server
+    if ("ip" in config[sectionMqtt]) : # backward compatibility if still using old entry in the ini file
+        cpp_defines.append(("MQTT_HOST", "\\\"" + config[sectionMqtt]["ip"] + "\\\""))
+    else:
+        cpp_defines.append(("MQTT_HOST", "\\\"" + config[sectionMqtt]["hostname"] + "\\\"")) # must be defined if "ip" is not defined
 
     if ("ip" in config[sectionWifi] and "gateway" in config[sectionWifi] and "subnet" in config[sectionWifi] and "dns1" in config[sectionWifi]) :
         cpp_defines.append(("HOST_IP", "\\\"" + config[sectionWifi]["ip"] + "\\\""))
@@ -42,6 +47,9 @@ if os.path.isfile(settings):
             cpp_defines.append(("HOST_DNS2", "\\\"" + config[sectionWifi]["dns2"] + "\\\""))
 
         staticIp = True
+
+    if ("scanStrongestAP" in config[sectionWifi]) :
+        cpp_defines.append(("SCAN_STRONGEST_AP", "\\\"" + config[sectionWifi]["scanStrongestAP"] + "\\\""))
 
     env.Append(CPPDEFINES=cpp_defines)
 

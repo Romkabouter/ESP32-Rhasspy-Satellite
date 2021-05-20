@@ -2,12 +2,13 @@
 hostname=192.168.43.140
 deployhost=192.168.43.24
 siteId=satellite
-;supported: M5ATOMECHO=0, MATRIXVOICE=1, AUDIOKIT=2
-device_type=0
+;supported: M5ATOMECHO=0, MATRIXVOICE=1, AUDIOKIT=2, INMP441=3, INMP441MAX98357A=4
+device_type=4
 
 [Wifi]
 ssid=SSID
 password=password
+;scanStrongestAP=true ; use if device connects to a non-optimal AP
 
 ;uncomment next 4 lines and fill with your own values if you want to use a static ip address
 ;ip=192.168.xxx.xxx
@@ -15,7 +16,7 @@ password=password
 ;subnet=255.255.255.0
 ;dns1=192.168.xxx.xxx
 ;optional: second dns server
-;dns2=192.168.xxx.xxx 
+;dns2=192.168.xxx.xxx
 
 [OTA]
 ;supported: upload, ota, matrix
@@ -28,7 +29,7 @@ password=OTApassword
 port=3232
 
 [MQTT]
-ip=192.168.43.54
+hostname=192.168.43.54
 port=1883
 username=username
 password=password

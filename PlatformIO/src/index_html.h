@@ -3,7 +3,7 @@ const char index_html[] PROGMEM = R"=====(
 <!DOCTYPE html>
 <html>
 <head>
-<title>Satellite Configuration</title>
+<title>Satellite Configuration - %SITEID%</title>
 <meta http-equiv="content-type" content="text/html; charset=ISO-8859-1">
 <style>
 * {box-sizing: border-box;}
@@ -38,9 +38,13 @@ input::-moz-focus-inner,input::-moz-focus-outer {border: 0;}
 </head>
 <body>
   <form action="/" method="post">
-    <h2>Satellite Configuration</h2>
+    <h2>Satellite Configuration - %SITEID%</h2>
     <div class="input-container">
-      <label for="mqtt_host">MQTT ip:&nbsp;</label>
+      <label for="siteid">siteID:&nbsp;</label>
+      <input class="input-field" type="text" placeholder="siteId" name="siteid" value="%SITEID%">
+    </div>
+    <div class="input-container">
+      <label for="mqtt_host">MQTT hostname:&nbsp;</label>
       <input class="input-field" type="text" placeholder="MQTT IP" name="mqtt_host" value="%MQTT_HOST%">
     </div>
     <div class="input-container">
@@ -96,13 +100,6 @@ input::-moz-focus-inner,input::-moz-focus-outer {border: 0;}
         <input type="range" min="0" max="100" step="5" value="%HW_BRIGHTNESS%" class="range-slider__range" name="hw_brightness">
         <span class="range-slider__value">0</span>
       </div>
-    </div>
-    <div class="input-container">
-      <label for="hotword_detection">Hotword detection:&nbsp;</label>
-      <select name="hotword_detection">
-        <option value="0" %HW_LOCAL%>Local</option>
-        <option value="1" %HW_REMOTE%>Remote</option>
-      </select>
     </div>
     <div class="input-container">
       <label for="gain">Gain:&nbsp;</label>

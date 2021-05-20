@@ -30,8 +30,8 @@ class HotwordDetected : public StateMachine
     device->updateBrightness(config.hotword_brightness);
     if (xSemaphoreTake(wbSemaphore, (TickType_t)10000) == pdTRUE) {
       device->updateColors(COLORS_HOTWORD);
+      xSemaphoreGive(wbSemaphore);
     }
-    xSemaphoreGive(wbSemaphore);
     initHeader(device->readSize, device->width, device->rate);
     xEventGroupSetBits(audioGroup, STREAM);
   }
@@ -67,8 +67,8 @@ class Idle : public StateMachine
     device->updateBrightness(config.brightness);
     if (xSemaphoreTake(wbSemaphore, (TickType_t)10000) == pdTRUE) {
       device->updateColors(COLORS_IDLE);
+      xSemaphoreGive(wbSemaphore);
     }
-    xSemaphoreGive(wbSemaphore);
     initHeader(device->readSize, device->width, device->rate);
     xEventGroupSetBits(audioGroup, STREAM);
   }
@@ -77,7 +77,7 @@ class Idle : public StateMachine
     if (device->isHotwordDetected() && !hotwordDetected) {
       hotwordDetected = true;
       //start session by publishing a message to hermes/dialogueManager/startSession
-      std::string message = "{\"init\":{\"type\":\"action\",\"canBeEnqueued\": false},\"siteId\":\"" + std::string(SITEID) + "\"}";
+      std::string message = "{\"init\":{\"type\":\"action\",\"canBeEnqueued\": false},\"siteId\":\"" + std::string(config.siteid) + "\"}";
       asyncClient.publish("hermes/dialogueManager/startSession", 0, false, message.c_str());
     }
   }
@@ -109,7 +109,7 @@ class Idle : public StateMachine
 class MQTTConnected : public StateMachine {
   void entry(void) override {
     Serial.println("Enter MQTTConnected");
-    Serial.printf("Connected as %s\r\n",SITEID);
+    Serial.printf("Connected as %s\r\n",config.siteid.c_str());
     publishDebug("Connected to asynch MQTT!");
     asyncClient.subscribe(playBytesTopic.c_str(), 0);
     asyncClient.subscribe(hotwordTopic.c_str(), 0);
@@ -148,14 +148,15 @@ class MQTTDisconnected : public StateMachine {
       asyncClient.onMessage(onMqttMessage);
       mqttInitialized = true;
     }
-    asyncClient.setClientId(SITEID);
-    asyncClient.setServer(config.mqtt_host, config.mqtt_port);
-    asyncClient.setCredentials(MQTT_USER, MQTT_PASS);
-    audioServer.setServer(config.mqtt_host, config.mqtt_port);
+    Serial.printf("Connecting MQTT: %s, %d\r\n", config.mqtt_host.c_str(), config.mqtt_port);
+    asyncClient.setClientId(config.siteid.c_str());
+    asyncClient.setServer(config.mqtt_host.c_str(), config.mqtt_port);
+    asyncClient.setCredentials(config.mqtt_user.c_str(), config.mqtt_pass.c_str());
+    audioServer.setServer(config.mqtt_host.c_str(), config.mqtt_port);
     char clientID[100];
-    sprintf(clientID, "%sAudio", SITEID);
+    snprintf(clientID, 100, "%sAudio", config.siteid.c_str());
     asyncClient.connect();
-    audioServer.connect(clientID, MQTT_USER, MQTT_PASS);
+    audioServer.connect(clientID, config.mqtt_user.c_str(), config.mqtt_pass.c_str());
   }
 
   void run(void) override {
@@ -165,6 +166,7 @@ class MQTTDisconnected : public StateMachine {
       currentMillis = millis();
       if (currentMillis - startMillis > 5000) {
         Serial.println("Connect failed, retry");
+        Serial.printf("Audio connected: %d, Async connected: %d\r\n", audioServer.connected(), asyncClient.connected());
         transit<MQTTDisconnected>();
       }      
     }
@@ -183,7 +185,7 @@ class WifiConnected : public StateMachine
 {
   void entry(void) override {
     Serial.println("Enter WifiConnected");
-    Serial.println("Connected to Wifi with IP: " + WiFi.localIP().toString());
+    Serial.printf("Connected to Wifi with IP: %s, SSID: %s, BSSID: %s, RSSI: %d\n", WiFi.localIP().toString().c_str(), WiFi.SSID().c_str(), WiFi.BSSIDstr().c_str(), WiFi.RSSI());
     xEventGroupClearBits(audioGroup, PLAY);
     xEventGroupClearBits(audioGroup, STREAM);
     device->updateBrightness(config.brightness);
@@ -243,7 +245,44 @@ class WifiDisconnected : public StateMachine
 
     WiFi.onEvent(WiFiEvent);
     WiFi.mode(WIFI_STA);
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
+
+    // find best AP (BSSID) if there are several AP for a given SSID
+    // https://github.com/arendst/Tasmota/blob/db615c5b0ba0053c3991cf40dd47b0d484ac77ae/tasmota/support_wifi.ino#L261
+    // https://esp32.com/viewtopic.php?t=18979
+    #if defined(SCAN_STRONGEST_AP)
+      Serial.println("WiFi scan start");
+      int n = WiFi.scanNetworks(); // WiFi.scanNetworks will return the number of networks found
+      // or WIFI_SCAN_RUNNING   (-1), WIFI_SCAN_FAILED    (-2)
+
+      Serial.printf("WiFi scan done, result %d\n", n);
+      if (n <= 0) {
+        Serial.println("error or no networks found");
+      } else {
+        for (int i = 0; i < n; ++i) {
+          // Print metrics for each network found
+          Serial.printf("%d: BSSID: %s  %ddBm, %d%% %s, %s (%d)\n", i + 1, WiFi.BSSIDstr(i).c_str(), WiFi.RSSI(i), constrain(2 * (WiFi.RSSI(i) + 100), 0, 100),
+            (WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? "open     " : "encrypted", WiFi.SSID(i).c_str(), WiFi.channel(i));
+        }
+      }
+      Serial.println();
+
+      // find first that matches SSID. Expect results to be sorted by signal strength.
+      int i = 0;
+      while ( String(WIFI_SSID) != String(WiFi.SSID(i)) && (i < n)) {
+        i++;
+      }
+
+      if (i == n || n < 0) {
+        Serial.println("No network with SSID " WIFI_SSID " found!");
+        WiFi.begin(WIFI_SSID, WIFI_PASS); // try basic method anyway
+      } else {
+        Serial.printf("SSID match found at index: %d\n", i + 1);
+        WiFi.begin(WIFI_SSID, WIFI_PASS, 0, WiFi.BSSID(i)); // pass selected BSSID
+      }
+    #else
+      WiFi.begin(WIFI_SSID, WIFI_PASS);
+    #endif
+
     while (WiFi.waitForConnectResult() != WL_CONNECTED) {
         retryCount++;
         if (retryCount > 2) {
@@ -311,7 +350,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
       // Check if this is for us
       if (!err) {
         JsonObject root = doc.as<JsonObject>();
-        if (root["siteId"] == SITEID 
+        if (root["siteId"] == config.siteid.c_str()
           && root.containsKey("reason")
           && root["reason"] == "dialogueSession") {
             send_event(HotwordDetectedEvent());
@@ -324,7 +363,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
       // Check if this is for us
       if (!err) {
         JsonObject root = doc.as<JsonObject>();
-        if (root["siteId"] == SITEID 
+        if (root["siteId"] == config.siteid.c_str() 
           && root.containsKey("reason")
           && root["reason"] == "dialogueSession") {
             send_event(IdleEvent());
@@ -332,7 +371,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
       }
     } else if (topicstr.find("playBytes") != std::string::npos) {
       std::vector<std::string> topicparts = explode("/", topicstr);
-      finishedMsg = "{\"id\":\"" + topicparts[4] + "\",\"siteId\":\"" + SITEID + "\",\"sessionId\":null}";
+      finishedMsg = "{\"id\":\"" + topicparts[4] + "\",\"siteId\":\"" + config.siteid + "\",\"sessionId\":null}";
       for (int i = 0; i < len; i++) {
         while (audioData.isFull()) {
           if (xEventGroupGetBits(audioGroup) != PLAY) {

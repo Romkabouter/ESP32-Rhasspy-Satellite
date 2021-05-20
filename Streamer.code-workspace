@@ -72,7 +72,15 @@
 			"memory_resource": "cpp",
 			"random": "cpp",
 			"set": "cpp",
-			"string": "cpp"
+			"string": "cpp",
+			"bit": "cpp",
+			"compare": "cpp",
+			"complex": "cpp",
+			"concepts": "cpp",
+			"netfwd": "cpp",
+			"ranges": "cpp",
+			"shared_mutex": "cpp",
+			"stop_token": "cpp"
 		}
 	}
 }

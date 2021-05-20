@@ -20,8 +20,8 @@ enum {
 AsyncWebServer server(80);
 //Configuration defaults
 struct Config {
-  IPAddress mqtt_host;
-  bool mqtt_valid = false;
+  std::string siteid = SITEID;
+  std::string mqtt_host = MQTT_HOST;
   int mqtt_port = MQTT_PORT;
   std::string mqtt_user = MQTT_USER;
   std::string mqtt_pass = MQTT_PASS;
@@ -59,14 +59,14 @@ int retryCount = 0;
 int I2SMode = -1;
 bool mqttConnected = false;
 bool DEBUG = false;
-std::string audioFrameTopic = std::string("hermes/audioServer/") + SITEID + std::string("/audioFrame");
-std::string playBytesTopic = std::string("hermes/audioServer/") + SITEID + std::string("/playBytes/#");
-std::string playFinishedTopic = std::string("hermes/audioServer/") + SITEID + std::string("/playFinished");
+std::string audioFrameTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/audioFrame");
+std::string playBytesTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/playBytes/#");
+std::string playFinishedTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/playFinished");
 std::string hotwordTopic = "hermes/hotword/#";
-std::string audioTopic = SITEID + std::string("/audio");
-std::string ledTopic = SITEID + std::string("/led");
-std::string debugTopic = SITEID + std::string("/debug");
-std::string restartTopic = SITEID + std::string("/restart");
+std::string audioTopic = config.siteid + std::string("/audio");
+std::string ledTopic = config.siteid + std::string("/led");
+std::string debugTopic = config.siteid + std::string("/debug");
+std::string restartTopic = config.siteid + std::string("/restart");
 AsyncMqttClient asyncClient; 
 WiFiClient net;
 PubSubClient audioServer(net); 
@@ -148,9 +148,10 @@ XT_Wav_Class::XT_Wav_Class(const unsigned char *WavData) {
 
 uint8_t WaveData[44];
 
+// this function supplies template variables to the template engine
 String processor(const String& var){
   if(var == "MQTT_HOST"){
-      return config.mqtt_host.toString();
+      return String(config.mqtt_host.c_str());
   }
   if(var == "MQTT_PORT"){
       return String(config.mqtt_port);
@@ -191,6 +192,9 @@ String processor(const String& var){
   if (var == "GAIN") {
       return String(config.gain);
   }
+  if (var == "SITEID") {
+      return String(config.siteid.c_str());
+  }
   return String();
 }
 
@@ -207,15 +211,18 @@ void handleFSf ( AsyncWebServerRequest* request, const String& route ) {
             for(int i=0;i<params;i++){
                 AsyncWebParameter* p = request->getParam(i);
                 Serial.printf("Parameter %s, value %s\r\n", p->name().c_str(), p->value().c_str());
+                if(p->name() == "siteid"){
+                    if (config.siteid != std::string(p->value().c_str())) {
+                        Serial.println("siteID changed");
+                        config.siteid = std::string(p->value().c_str());
+                        saveNeeded = true;
+                    }
+                }
                 if(p->name() == "mqtt_host"){
-                    char ip[64];
-                    strlcpy(ip,p->value().c_str(),sizeof(ip));
-                    IPAddress adr;
-                    adr.fromString(ip);
-                    if (config.mqtt_host != adr) {
-                    Serial.println("Mqtt host changed");
-                    config.mqtt_valid = config.mqtt_host.fromString(ip);
-                    saveNeeded = true;
+                    if (config.mqtt_host != std::string(p->value().c_str())) {
+                        Serial.println("Mqtt host changed");
+                        config.mqtt_host = std::string(p->value().c_str());
+                        saveNeeded = true;
                     }
                 }
                 if(p->name() == "mqtt_port"){
@@ -341,11 +348,12 @@ void loadConfiguration(const char *filename, Config &config) {
   DeserializationError error = deserializeJson(doc, file);
   if (error) {
     Serial.println(F("Failed to read file, using default configuration"));
-    config.mqtt_valid = config.mqtt_host.fromString(MQTT_IP);
+    config.mqtt_host = MQTT_HOST;
   } else {
     serializeJsonPretty(doc, Serial);
     Serial.println();  
-    config.mqtt_valid = config.mqtt_host.fromString(doc.getMember("mqtt_host").as<const char*>());
+    config.siteid = doc.getMember("siteid").as<std::string>();
+    config.mqtt_host = doc.getMember("mqtt_host").as<std::string>();
     config.mqtt_port = doc.getMember("mqtt_port").as<int>();
     config.mqtt_user = doc.getMember("mqtt_user").as<std::string>();
     config.mqtt_pass = doc.getMember("mqtt_pass").as<std::string>();
@@ -356,14 +364,19 @@ void loadConfiguration(const char *filename, Config &config) {
     config.brightness = doc.getMember("brightness").as<int>();
     device->updateBrightness(config.brightness);
     config.hotword_brightness = doc.getMember("hotword_brightness").as<int>();
-    config.hotword_detection = doc.getMember("hotword_detection").as<int>();
+    //config.hotword_detection = doc.getMember("hotword_detection").as<int>();
+    config.hotword_detection = 1;
     config.volume = doc.getMember("volume").as<int>();
     device->setVolume(config.volume);
     config.gain = doc.getMember("gain").as<int>();
     device->setGain(config.gain);
-    if (config.mqtt_host[0] == 0) {
-        config.mqtt_valid = false;
-    }
+    audioFrameTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/audioFrame");
+    playBytesTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/playBytes/#");
+    playFinishedTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/playFinished");
+    audioTopic = config.siteid + std::string("/audio");
+    ledTopic = config.siteid + std::string("/led");
+    debugTopic = config.siteid + std::string("/debug");
+    restartTopic = config.siteid + std::string("/restart");
   }
   file.close();
 }
@@ -379,14 +392,11 @@ void saveConfiguration(const char *filename, Config &config) {
         return;
     }
     StaticJsonDocument<256> doc;
-    char ip[64];
-    strlcpy(ip,config.mqtt_host.toString().c_str(),sizeof(ip)); 
-    config.mqtt_valid = config.mqtt_host.fromString(ip);
-    doc["mqtt_host"] = config.mqtt_host.toString();
+    doc["siteid"] = config.siteid;
+    doc["mqtt_host"] = config.mqtt_host;
     doc["mqtt_port"] = config.mqtt_port;
     doc["mqtt_user"] = config.mqtt_user;
     doc["mqtt_pass"] = config.mqtt_pass;
-    doc["mqtt_valid"] = config.mqtt_valid;
     doc["mute_input"] = config.mute_input;
     doc["mute_output"] = config.mute_output;
     doc["amp_output"] = config.amp_output;
@@ -396,9 +406,9 @@ void saveConfiguration(const char *filename, Config &config) {
     doc["volume"] = config.volume;
     doc["gain"] = config.gain;
     if (serializeJson(doc, file) == 0) {
-         Serial.println(F("Failed to write to file"));
+        Serial.println(F("Failed to write to file"));
     }
     file.close();
-    loadConfiguration(filename, config);
-    audioServer.disconnect();
+    Serial.println("Configuration saved! Rebooting");
+    ESP.restart();    
 }
