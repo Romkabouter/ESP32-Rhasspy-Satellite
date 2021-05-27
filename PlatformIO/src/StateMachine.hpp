@@ -112,6 +112,7 @@ class MQTTConnected : public StateMachine {
     Serial.printf("Connected as %s\r\n",config.siteid.c_str());
     publishDebug("Connected to asynch MQTT!");
     asyncClient.subscribe(playBytesTopic.c_str(), 0);
+    asyncClient.subscribe(playBytesStreamingTopic.c_str(), 0);
     asyncClient.subscribe(hotwordTopic.c_str(), 0);
     asyncClient.subscribe(audioTopic.c_str(), 0);
     asyncClient.subscribe(debugTopic.c_str(), 0);
@@ -342,6 +343,7 @@ std::vector<std::string> explode( const std::string &delimiter, const std::strin
 
 void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) {
   std::string topicstr(topic);
+  std::string sessionid;
   if (len + index == total) {
     if (topicstr.find("toggleOff") != std::string::npos) {
       std::string payloadstr(payload);
@@ -353,6 +355,10 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
         if (root["siteId"] == config.siteid.c_str()
           && root.containsKey("reason")
           && root["reason"] == "dialogueSession") {
+            if (root.containsKey("sessionId")) {
+                JsonVariant sessionId = root.getMember("sessionId");
+                sessionid = sessionId.as<std::string>();
+            }
             send_event(HotwordDetectedEvent());
         }
       }
@@ -369,9 +375,22 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
             send_event(IdleEvent());
           }
       }
-    } else if (topicstr.find("playBytes") != std::string::npos) {
+    } else if (topicstr.find("playBytes") != std::string::npos || topicstr.find("playBytesStreaming") != std::string::npos) {  
       std::vector<std::string> topicparts = explode("/", topicstr);
-      finishedMsg = "{\"id\":\"" + topicparts[4] + "\",\"siteId\":\"" + config.siteid + "\",\"sessionId\":null}";
+      if (topicstr.find("playBytesStreaming") != std::string::npos) {
+          streamingBytes = true;
+          // Get the ID from the topic
+          finishedMsg = "{\"id\":\"" + topicparts[4] + "\",\"siteId\":\"" + config.siteid + "\"}";
+          if (topicstr.substr(strlen(topicstr.c_str())-3, 3) == "0/0") {
+              endStream = false;
+          } else if (topicstr.substr(strlen(topicstr.c_str())-2, 2) == "/1") {
+              endStream = true;
+          }
+      } else {
+          // Get the ID from the topic   
+          finishedMsg = "{\"id\":\"" + topicparts[4] + "\",\"siteId\":\"" + config.siteid + "\",\"sessionId\":\"" + sessionid + "\" }";
+          streamingBytes = false;
+      }
       for (int i = 0; i < len; i++) {
         while (audioData.isFull()) {
           if (xEventGroupGetBits(audioGroup) != PLAY) {
@@ -492,7 +511,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
     }
   } else {
     // len + index < total ==> partial message
-    if (topicstr.find("playBytes") != std::string::npos) {
+    if (topicstr.find("playBytes") != std::string::npos || topicstr.find("playBytesStreaming") != std::string::npos) {
       if (index == 0) {
         message_size = total;
         audioData.clear();
@@ -508,8 +527,10 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
         numChannels = (int)Message.NumChannels;
         bitDepth = (int)Message.BitsPerSample;
         queueDelay = ((int)Message.SampleRate * (int)Message.NumChannels * (int)Message.BitsPerSample) /  1000;
-        //delay *= 2;
-        //Serial.printf("Delay %d\n", (int)queueDelay);
+        if (topicstr.find("playBytesStreaming") != std::string::npos) {
+            endStream = false;
+            streamingBytes = true;
+        }
         for (int i = 44; i < len; i++) {
           while (audioData.isFull()) {
             if (xEventGroupGetBits(audioGroup) != PLAY) {
@@ -569,7 +590,13 @@ void I2Stask(void *p) {
             }
           }
       }
-      asyncClient.publish(playFinishedTopic.c_str(), 0, false, finishedMsg.c_str());
+      if (streamingBytes) {
+        if (endStream) {
+          asyncClient.publish(streamFinishedTopic.c_str(), 0, false, finishedMsg.c_str());
+        }
+      } else {
+        asyncClient.publish(playFinishedTopic.c_str(), 0, false, finishedMsg.c_str());
+      }
       device->muteOutput(true);
       audioData.clear();
       Serial.println("Done");
@@ -592,6 +619,12 @@ void I2Stask(void *p) {
             uint8_t payload[sizeof(header) + messageBytes];
             const int message_count = sizeof(data) / messageBytes;
             for (int i = 0; i < message_count; i++) {
+             // time_t now;
+             // time(&now);
+             // struct tm timeinfo;
+             // char strftime_buf[64];
+             // strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
+             // strncpy(header.timestamp, (char*)strftime_buf , 64);
               memcpy(payload, &header, sizeof(header));
               memcpy(&payload[sizeof(header)], &data[messageBytes * i], messageBytes);
               audioServer.publish(audioFrameTopic.c_str(),(uint8_t *)payload, sizeof(payload));
@@ -620,8 +653,12 @@ void initHeader(int readSize, int width, int rate) {
     strncpy(header.wave_tag, "WAVE", 4);
     strncpy(header.fmt_tag, "fmt ", 4);
     strncpy(header.data_tag, "data", 4);
+    //strncpy(header.time, "time", 4);
+    //header.timevalue = 8;
+//    header.timestamp1 = 1621840480612;
 
     header.riff_length = (uint32_t)sizeof(header) + (readSize * width);
+//    header.riff_length = 564;//(uint32_t)sizeof(header) + (readSize * width);
     header.fmt_length = 16;
     header.audio_format = 1;
     header.num_channels = 1;

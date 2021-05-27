@@ -49,6 +49,10 @@ struct wavfile_header {
     int byte_rate;          // 4
     short block_align;      // 2
     short bits_per_sample;  // 2
+    // char time[4];
+    // int timevalue;
+    // int timestamp1;
+    // int timestamp2;
     char data_tag[4];       // 4
     int data_length;        // 4
 };
@@ -59,9 +63,13 @@ int retryCount = 0;
 int I2SMode = -1;
 bool mqttConnected = false;
 bool DEBUG = false;
+bool streamingBytes = false;
+bool endStream = false;
 std::string audioFrameTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/audioFrame");
 std::string playBytesTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/playBytes/#");
+std::string playBytesStreamingTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/playBytesStreaming/#");
 std::string playFinishedTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/playFinished");
+std::string streamFinishedTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/streamFinished");
 std::string hotwordTopic = "hermes/hotword/#";
 std::string audioTopic = config.siteid + std::string("/audio");
 std::string ledTopic = config.siteid + std::string("/led");
@@ -372,7 +380,9 @@ void loadConfiguration(const char *filename, Config &config) {
     device->setGain(config.gain);
     audioFrameTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/audioFrame");
     playBytesTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/playBytes/#");
+    playBytesStreamingTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/playBytesStreaming/#");
     playFinishedTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/playFinished");
+    streamFinishedTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/streamFinished");
     audioTopic = config.siteid + std::string("/audio");
     ledTopic = config.siteid + std::string("/led");
     debugTopic = config.siteid + std::string("/debug");
