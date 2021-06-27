@@ -38,8 +38,11 @@
 #define KEY4_GPIO GPIO_NUM_23 // do not use on V2.3 -> I2S
 #define KEY5_GPIO GPIO_NUM_18 // do not use on V2.3 -> I2S
 #define KEY6_GPIO GPIO_NUM_5  // do not use on V2.3 -> I2S
+
 // alias
-#define KEY_LISTEN KEY1_GPIO
+#define KEY_LISTEN KEY3_GPIO
+#define ES_KEY_LISTEN KEY1_GPIO
+
 //#define KEY_VOL_UP KEY5_GPIO
 //#define KEY_VOL_DOWN KEY6_GPIO
 
@@ -178,6 +181,20 @@ static esp_err_t es8388_init()
 
     return res;
 }
+
+enum ES8388_OUT {
+    ES_OUT1,
+    ES_OUT2
+};
+
+void es_vol(ES8388_OUT out, uint8_t vol)
+{
+    /* set LOUT2 / ROUT2 volume: 0dB (unattenuated) */
+    uint8_t vol_val = (0x21 * vol)/100;
+    es_write_reg(ES8388_ADDR, out ==  ES_OUT1?ES8388_DACCONTROL24: ES8388_DACCONTROL26, vol_val);
+    es_write_reg(ES8388_ADDR, out ==  ES_OUT1?ES8388_DACCONTROL25: ES8388_DACCONTROL27, vol_val);
+
+}
 class AudioKit : public Device
 {
 public:
@@ -205,6 +222,7 @@ private:
     AC101 ac;
     bool is_es = false;
     bool is_2chan_out = false;
+    uint16_t key_listen;
 };
 
 AudioKit::AudioKit(){};
@@ -233,6 +251,8 @@ void AudioKit::init()
         ac.SetMode(AC101::MODE_ADC_DAC);
     }
 
+    key_listen = is_es? ES_KEY_LISTEN: KEY_LISTEN;
+
     // LEDs
     pinMode(LED_STREAM, OUTPUT); // active low
     pinMode(LED_WIFI, OUTPUT);   // active low
@@ -244,7 +264,7 @@ void AudioKit::init()
     pinMode(GPIO_PA_EN, OUTPUT);
 
     // Configure keys on ESP32 Audio Kit board
-    pinMode(KEY_LISTEN, INPUT_PULLUP);
+    pinMode(key_listen, INPUT_PULLUP);
     // pinMode(KEY_VOL_UP, INPUT_PULLUP);
     // pinMode(KEY_VOL_DOWN, INPUT_PULLUP);
 };
@@ -312,6 +332,7 @@ void AudioKit::InitI2SSpeakerOrMic(int mode)
         tx_pin_config.ws_io_num = ES_CONFIG_I2S_LRCK_PIN;
         tx_pin_config.data_out_num = ES_CONFIG_I2S_DATA_PIN;
         tx_pin_config.data_in_num = ES_CONFIG_I2S_DATA_IN_PIN;
+
     }
     else
     {
@@ -322,11 +343,14 @@ void AudioKit::InitI2SSpeakerOrMic(int mode)
     }
 
     err += i2s_set_pin(SPEAKER_I2S_NUMBER, &tx_pin_config);
-    err += i2s_set_clk(SPEAKER_I2S_NUMBER, 16000, I2S_BITS_PER_SAMPLE_16BIT, I2S_CHANNEL_STEREO);
+    err += i2s_set_clk(SPEAKER_I2S_NUMBER, 16000, I2S_BITS_PER_SAMPLE_16BIT, is_es ? I2S_CHANNEL_STEREO : I2S_CHANNEL_MONO);
 
-    PIN_FUNC_SELECT(PERIPHS_IO_MUX_GPIO0_U, FUNC_GPIO0_CLK_OUT1);
-    WRITE_PERI_REG(PIN_CTRL, 0xFFF0);
-
+    if (is_es)
+    {        
+        // ES8388 requires MCLK output.
+        PIN_FUNC_SELECT(PERIPHS_IO_MUX_GPIO0_U, FUNC_GPIO0_CLK_OUT1);
+        WRITE_PERI_REG(PIN_CTRL, 0xFFF0);
+    }
     return;
 }
 
@@ -416,16 +440,24 @@ void AudioKit::muteOutput(bool mute)
     digitalWrite(GPIO_PA_EN, mute ? LOW : HIGH);
 }
 
+/**
+ * @brief sets output volume for all outputs
+ * 
+ * @param volume 0 - 100
+ */
 void AudioKit::setVolume(uint16_t volume)
 {
-    // volume is 0 to 100, needs to be 0 to 63
-    const uint8_t vol = (uint8_t)(volume / 100.0f * 63.0f);
-
+ 
     if (is_es)
     {
+        es_vol(ES_OUT1, volume);
+        es_vol(ES_OUT2, volume);
     }
     else
     {
+        // volume is 0 to 100, needs to be 0 to 63
+        const uint8_t vol = (uint8_t)(volume / 100.0f * 63.0f);
+
         ac.SetVolumeHeadphone(vol);
         ac.SetVolumeSpeaker(vol);
     }
@@ -434,5 +466,5 @@ void AudioKit::setVolume(uint16_t volume)
 bool AudioKit::isHotwordDetected()
 {
     // TODOD debounce maybe?
-    return digitalRead(KEY_LISTEN) == LOW;
+    return digitalRead(key_listen) == LOW;
 }
