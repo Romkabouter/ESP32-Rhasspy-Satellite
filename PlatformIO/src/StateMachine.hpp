@@ -1,7 +1,7 @@
 #include <tinyfsm.hpp>
 #include <AsyncMqttClient.h>
 #include <PubSubClient.h>
-#include "RingBuf.h"
+#include "Esp32RingBuffer.h"
 
 class StateMachine
 : public tinyfsm::Fsm<StateMachine>
@@ -212,8 +212,9 @@ class WifiDisconnected : public StateMachine
     xEventGroupClearBits(audioGroup, PLAY);
     if (i2sHandle == NULL) {
       Serial.println("Creating I2Stask");
-      xTaskCreatePinnedToCore(I2Stask, "I2Stask", 30000, NULL, 3, &i2sHandle, 0);
-    } else {
+      xTaskCreatePinnedToCore(I2Stask, "I2Stask", 30000, NULL, 3, &i2sHandle, 1);
+      // give this task a suffciently high priority to push data in time to DMA
+    } else {  
       Serial.println("We already have a I2Stask");
     }
     Serial.println("Enter WifiDisconnected");
@@ -340,10 +341,71 @@ std::vector<std::string> explode( const std::string &delimiter, const std::strin
     return arr;
 }
 
-void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) {
-  std::string topicstr(topic);
-  if (len + index == total) {
-    if (topicstr.find("toggleOff") != std::string::npos) {
+void push_i2s_data(const uint8_t *const payload, size_t len)
+{
+  while (audioData.push((uint8_t *)payload, len) == false)
+  {
+    // getting in here indicates a completely filled buffer, as this is the only 
+    // reason why push can fail unless len is larger than max buffer size
+    // this case is not handled and must be avoided, hence we put an assert in
+    assert(len < audioData.maxSize());
+    do
+    {
+      if (xEventGroupGetBits(audioGroup) != PLAY)
+      {
+        send_event(PlayAudioEvent());
+      }
+      vTaskDelay(pdMS_TO_TICKS(50));
+    } while (audioData.isFull());
+    /// Serial.print("."); 
+  }
+}
+
+void handle_playBytes(const std::string& topicstr, uint8_t *payload, size_t len, size_t index, size_t total)
+{
+  size_t offset = 0;
+
+  // start of message
+  if (index == 0)
+  {
+    message_size = total;
+    audioData.clear();
+    XT_Wav_Class Message((const uint8_t *)payload);
+    Serial.printf("Samplerate: %d, Channels: %d, Format: %d, Bits per Sample: %d\r\n", (int)Message.SampleRate, (int)Message.NumChannels, (int)Message.Format, (int)Message.BitsPerSample);
+    sampleRate = (int)Message.SampleRate;
+    numChannels = (int)Message.NumChannels;
+    bitDepth = (int)Message.BitsPerSample;
+    queueDelay = ((int)Message.SampleRate * (int)Message.NumChannels * (int)Message.BitsPerSample) / 1000;
+    //delay *= 2;
+    //Serial.printf("Delay %d\n", (int)queueDelay);
+    offset = 44;
+  }
+
+  push_i2s_data((uint8_t *)&payload[offset], len - offset);
+
+  // enf of message 
+  if (len + index == total)
+  {    
+    //At the end, make sure to start play in case the buffer is not full yet
+    if (!audioData.isEmpty() && xEventGroupGetBits(audioGroup) != PLAY)
+    {
+      send_event(PlayAudioEvent());
+    }
+
+    std::vector<std::string> topicparts = explode("/", topicstr);
+    finishedMsg = "{\"id\":\"" + topicparts[4] + "\",\"siteId\":\"" + config.siteid + "\",\"sessionId\":null}";
+  }
+}
+
+void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total)
+{
+  const std::string topicstr(topic);
+
+  // complete or enf of message has been received
+  if (len + index == total)
+  {
+    if (topicstr.find("toggleOff") != std::string::npos)
+    {
       std::string payloadstr(payload);
       StaticJsonDocument<300> doc;
       DeserializationError err = deserializeJson(doc, payloadstr.c_str());
@@ -366,25 +428,13 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
         if (root["siteId"] == config.siteid.c_str() 
           && root.containsKey("reason")
           && root["reason"] == "dialogueSession") {
-            send_event(IdleEvent());
-          }
-      }
-    } else if (topicstr.find("playBytes") != std::string::npos) {
-      std::vector<std::string> topicparts = explode("/", topicstr);
-      finishedMsg = "{\"id\":\"" + topicparts[4] + "\",\"siteId\":\"" + config.siteid + "\",\"sessionId\":null}";
-      for (int i = 0; i < len; i++) {
-        while (audioData.isFull()) {
-          if (xEventGroupGetBits(audioGroup) != PLAY) {
-            send_event(PlayAudioEvent());
-          }
-          vTaskDelay(10 / portTICK_PERIOD_MS);
+          send_event(IdleEvent());
         }
-        audioData.push((uint8_t)payload[i]);
       }
-      //At the end, make sure to start play incase the buffer is not full yet
-      if (!audioData.isEmpty() && xEventGroupGetBits(audioGroup) != PLAY) {
-        send_event(PlayAudioEvent());
-      }
+    }
+    else if (topicstr.find("playBytes") != std::string::npos)
+    {
+      handle_playBytes(topicstr, (uint8_t*)payload, len, index, total);
     } else if (topicstr.find(ledTopic.c_str()) != std::string::npos) {
       std::string payloadstr(payload);
       StaticJsonDocument<300> doc;
@@ -463,7 +513,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
         }
         saveConfiguration(configfile, config);
       } else {
-          publishDebug(err.c_str());
+        publishDebug(err.c_str());
       }
     } else if (topicstr.find(restartTopic.c_str()) != std::string::npos) {
       std::string payloadstr(payload);
@@ -492,45 +542,13 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
     }
   } else {
     // len + index < total ==> partial message
-    if (topicstr.find("playBytes") != std::string::npos) {
-      if (index == 0) {
-        message_size = total;
-        audioData.clear();
-        for (int i = 0; i < 44; i++) {
-          audioData.push((uint8_t)payload[i]);
-        }
-        for (int k = 0; k < 44; k++) {
-            audioData.pop(WaveData[k]);
-        }
-        XT_Wav_Class Message((const uint8_t *)WaveData);
-        Serial.printf("Samplerate: %d, Channels: %d, Format: %d, Bits per Sample: %d\r\n", (int)Message.SampleRate, (int)Message.NumChannels, (int)Message.Format, (int)Message.BitsPerSample);
-        sampleRate = (int)Message.SampleRate;
-        numChannels = (int)Message.NumChannels;
-        bitDepth = (int)Message.BitsPerSample;
-        queueDelay = ((int)Message.SampleRate * (int)Message.NumChannels * (int)Message.BitsPerSample) /  1000;
-        //delay *= 2;
-        //Serial.printf("Delay %d\n", (int)queueDelay);
-        for (int i = 44; i < len; i++) {
-          while (audioData.isFull()) {
-            if (xEventGroupGetBits(audioGroup) != PLAY) {
-              Serial.println("PlayAudioEvent");
-              send_event(PlayAudioEvent());
-            }
-            vTaskDelay(10 / portTICK_PERIOD_MS);
-          }
-          audioData.push((uint8_t)payload[i]);
-        }
-      } else {
-        for (int i = 0; i < len; i++) {
-          while (audioData.isFull()) {
-            if (xEventGroupGetBits(audioGroup) != PLAY) {
-              send_event(PlayAudioEvent());
-            }
-            vTaskDelay(10 / portTICK_PERIOD_MS);
-          }
-          audioData.push((uint8_t)payload[i]);
-        }
-      }
+    if (topicstr.find("playBytes") != std::string::npos)
+    {
+      handle_playBytes(topicstr, (uint8_t*)payload, len, index, total);
+    }
+    else
+    {
+      Serial.printf("Unhandled partial message received, topic '%s'", topic);
     }
   }
 }
@@ -544,30 +562,40 @@ void I2Stask(void *p) {
 
       device->setWriteMode(sampleRate, bitDepth, numChannels);
 
-      while (played < message_size && timeout == false) {
-          int bytes_to_write = device->writeSize;
-          if (message_size - played < device->writeSize) {
-              bytes_to_write = message_size - played;
+      while (played < message_size && timeout == false)
+      {
+        int bytes_to_write = device->writeSize;
+        if (message_size - played < device->writeSize)
+        {
+          bytes_to_write = message_size - played;
+        }
+        uint16_t data[bytes_to_write/2];
+        if (!timeout)
+        {
+          for (int i = 0; i < bytes_to_write/2; i++)
+          {
+            if (!audioData.pop(data[i]))
+            {
+              Serial.printf("Buffer underflow %d %d\n", played + i, message_size);
+              vTaskDelay(60);
+              bytes_to_write = (i)*2;
+            }
           }
-          uint8_t data[bytes_to_write];
-          if (!timeout) {
-            for (int i = 0; i < bytes_to_write; i++) {
-              if (!audioData.pop(data[i])) {
-                data[i] = 0;
-                Serial.println("Buffer underflow");
-              }
-            }
-            played = played + bytes_to_write;
-            if (!config.mute_output) {
-              device->muteOutput(false);
-              device->writeAudio(data, bytes_to_write, &bytes_written);
-            } else {
-              bytes_written = bytes_to_write;
-            }
+          played = played + bytes_to_write;
+          if (!config.mute_output)
+          {
+            device->muteOutput(false);
+            device->writeAudio((uint8_t*)data, bytes_to_write, &bytes_written);
+
+          }
+          else
+          {
+            bytes_written = bytes_to_write;
+          }
             if (bytes_written != bytes_to_write) {
               Serial.printf("Bytes to write %d, but bytes written %d\r\n",bytes_to_write,bytes_written);
-            }
           }
+        }
       }
       asyncClient.publish(playFinishedTopic.c_str(), 0, false, finishedMsg.c_str());
       device->muteOutput(true);
