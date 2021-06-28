@@ -9,7 +9,7 @@
  * The main use case is to convert a stream buffer (typically bytes) to a larger fixed item
  * size (such as 16bit samples).
  * 
- * Pushing into the buffer can be done on the granularity of the ET item size, 
+ * Pushing into the buffer can be done on the granularity of the IT item size, 
  * popping returns always a full output item.  
  * 
  * The implementation is multi-core and multi-thread safe. Use methods ...FromISR
@@ -27,7 +27,7 @@ class Esp32RingBuffer
 public:
     Esp32RingBuffer()
     {
-        static_assert((sizeof(OT) % sizeof(IT)) == 0, "sizeof of OT must be a multiple of sizeof of ET");
+        static_assert((sizeof(OT) % sizeof(IT)) == 0, "sizeof(OT) must be a multiple of sizeof(IT)");
         rbh = xRingbufferCreate(S * sizeof(OT), RINGBUF_TYPE_BYTEBUF);
     }
 
@@ -114,7 +114,22 @@ public:
     
     /* Reset the buffer  to an empty state */
     void clear()
-    { /* not implemented */
+    { 
+        // we try to get to a state where we are not getting any more memory back
+        // this requires at least 2 calls to xRingbufferReceiveUpTo
+        void* item_p;
+        
+        do 
+        {
+          size_t freed_bytes;
+
+          item_p = xRingbufferReceiveUpTo(rbh, &freed_bytes, 0, size());
+          if (item_p != NULL)
+          {
+              vRingbufferReturnItem(rbh, item_p);
+          }
+        }
+        while (item_p != NULL);            
     }
     /* return the used size of the buffer in bytes */
     size_t size() { return xRingbufferGetMaxItemSize(rbh) - xRingbufferGetCurFreeSize(rbh); }

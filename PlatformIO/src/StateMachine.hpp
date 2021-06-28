@@ -576,7 +576,7 @@ void I2Stask(void *p) {
           {
             if (!audioData.pop(data[i]))
             {
-              Serial.printf("Buffer underflow %d %d\n", played + i, message_size);
+              Serial.printf("Buffer underflow %d %ld\n", played + i, message_size);
               vTaskDelay(60);
               bytes_to_write = (i)*2;
             }

@@ -52,6 +52,7 @@
 #define _ES8388_REGISTERS_H
 
 #define ES8388_ADDR 0x10
+
 /* ES8388 register */
 #define ES8388_CONTROL1 0x00
 #define ES8388_CONTROL2 0x01
@@ -97,7 +98,7 @@
 #define ES8388_DACCONTROL15 0x25
 #define ES8388_DACCONTROL16 0x26
 #define ES8388_DACCONTROL17 0x27
-#define  ES8388_DACCONTROL18 0x28
+#define ES8388_DACCONTROL18 0x28
 #define ES8388_DACCONTROL19 0x29
 #define ES8388_DACCONTROL20 0x2a
 #define ES8388_DACCONTROL21 0x2b
@@ -113,7 +114,25 @@
 
 #endif
 
-static bool es_write_reg(uint8_t slave_add, uint8_t reg_add, uint8_t data)
+class ES8388
+{
+
+    bool write_reg(uint8_t slave_add, uint8_t reg_add, uint8_t data);
+
+    public:
+
+    esp_err_t begin();
+
+    enum ES8388_OUT {
+    ES_OUT1,
+    ES_OUT2
+    };
+
+    void vol(const  ES8388_OUT out, const uint8_t vol);
+
+};
+
+bool ES8388::write_reg(uint8_t slave_add, uint8_t reg_add, uint8_t data)
 {
     Wire.beginTransmission(slave_add);
     Wire.write(reg_add);
@@ -121,80 +140,80 @@ static bool es_write_reg(uint8_t slave_add, uint8_t reg_add, uint8_t data)
     return Wire.endTransmission() == 0;
 }
 
-static esp_err_t es8388_init()
+
+esp_err_t ES8388::begin()
 {
     esp_err_t res = ESP_OK;
 
     /* mute DAC during setup, power up all systems, slave mode */
-    res |= es_write_reg(ES8388_ADDR, ES8388_DACCONTROL3, 0x04);
-    res |= es_write_reg(ES8388_ADDR, ES8388_CONTROL2, 0x50);
-    res |= es_write_reg(ES8388_ADDR, ES8388_CHIPPOWER, 0x00);
-    res |= es_write_reg(ES8388_ADDR, ES8388_MASTERMODE, 0x00);
+    res |= write_reg(ES8388_ADDR, ES8388_DACCONTROL3, 0x04);
+    res |= write_reg(ES8388_ADDR, ES8388_CONTROL2, 0x50);
+    res |= write_reg(ES8388_ADDR, ES8388_CHIPPOWER, 0x00);
+    res |= write_reg(ES8388_ADDR, ES8388_MASTERMODE, 0x00);
 
     /* power up DAC and enable LOUT1+2 / ROUT1+2, ADC sample rate = DAC sample rate */
-    res |= es_write_reg(ES8388_ADDR, ES8388_DACPOWER, 0x3e);
-    res |= es_write_reg(ES8388_ADDR, ES8388_CONTROL1, 0x12);
+    res |= write_reg(ES8388_ADDR, ES8388_DACPOWER, 0x3e);
+    res |= write_reg(ES8388_ADDR, ES8388_CONTROL1, 0x12);
 
     /* DAC I2S setup: 16 bit word length, I2S format; MCLK / Fs = 256*/
-    res |= es_write_reg(ES8388_ADDR, ES8388_DACCONTROL1, 0x18);
-    res |= es_write_reg(ES8388_ADDR, ES8388_DACCONTROL2, 0x02);
+    res |= write_reg(ES8388_ADDR, ES8388_DACCONTROL1, 0x18);
+    res |= write_reg(ES8388_ADDR, ES8388_DACCONTROL2, 0x02);
 
     /* DAC to output route mixer configuration: ADC MIX TO OUTPUT */
-    res |= es_write_reg(ES8388_ADDR, ES8388_DACCONTROL16, 0x1B);
-    res |= es_write_reg(ES8388_ADDR, ES8388_DACCONTROL17, 0x90);
-    res |= es_write_reg(ES8388_ADDR, ES8388_DACCONTROL20, 0x90);
+    res |= write_reg(ES8388_ADDR, ES8388_DACCONTROL16, 0x1B);
+    res |= write_reg(ES8388_ADDR, ES8388_DACCONTROL17, 0x90);
+    res |= write_reg(ES8388_ADDR, ES8388_DACCONTROL20, 0x90);
 
     /* DAC and ADC use same LRCK, enable MCLK input; output resistance setup */
-    res |= es_write_reg(ES8388_ADDR, ES8388_DACCONTROL21, 0x80);
-    res |= es_write_reg(ES8388_ADDR, ES8388_DACCONTROL23, 0x00);
+    res |= write_reg(ES8388_ADDR, ES8388_DACCONTROL21, 0x80);
+    res |= write_reg(ES8388_ADDR, ES8388_DACCONTROL23, 0x00);
 
     /* DAC volume control: 0dB (maximum, unattenuated)  */
-    res |= es_write_reg(ES8388_ADDR, ES8388_DACCONTROL5, 0x00);
-    res |= es_write_reg(ES8388_ADDR, ES8388_DACCONTROL4, 0x00);
+    res |= write_reg(ES8388_ADDR, ES8388_DACCONTROL5, 0x00);
+    res |= write_reg(ES8388_ADDR, ES8388_DACCONTROL4, 0x00);
 
     /* power down ADC while configuring; volume: +9dB for both channels */
-    res |= es_write_reg(ES8388_ADDR, ES8388_ADCPOWER, 0xff);
-    res |= es_write_reg(ES8388_ADDR, ES8388_ADCCONTROL1, 0x88); // +24db
+    res |= write_reg(ES8388_ADDR, ES8388_ADCPOWER, 0xff);
+    res |= write_reg(ES8388_ADDR, ES8388_ADCCONTROL1, 0x88); // +24db
 
     /* select LINPUT2 / RINPUT2 as ADC input; stereo; 16 bit word length, format right-justified, MCLK / Fs = 256 */
-    res |= es_write_reg(ES8388_ADDR, ES8388_ADCCONTROL2, 0xf0); // 50
-    res |= es_write_reg(ES8388_ADDR, ES8388_ADCCONTROL3, 0x80); // 00
-    res |= es_write_reg(ES8388_ADDR, ES8388_ADCCONTROL4, 0x0e);
-    res |= es_write_reg(ES8388_ADDR, ES8388_ADCCONTROL5, 0x02);
+    res |= write_reg(ES8388_ADDR, ES8388_ADCCONTROL2, 0xf0); // 50
+    res |= write_reg(ES8388_ADDR, ES8388_ADCCONTROL3, 0x80); // 00
+    res |= write_reg(ES8388_ADDR, ES8388_ADCCONTROL4, 0x0e);
+    res |= write_reg(ES8388_ADDR, ES8388_ADCCONTROL5, 0x02);
 
     /* set ADC volume */
-    res |= es_write_reg(ES8388_ADDR, ES8388_ADCCONTROL8, 0x20);
-    res |= es_write_reg(ES8388_ADDR, ES8388_ADCCONTROL9, 0x20);
+    res |= write_reg(ES8388_ADDR, ES8388_ADCCONTROL8, 0x20);
+    res |= write_reg(ES8388_ADDR, ES8388_ADCCONTROL9, 0x20);
 
     /* set LOUT1 / ROUT1 volume: 0dB (unattenuated) */
-    res |= es_write_reg(ES8388_ADDR, ES8388_DACCONTROL24, 0x1e);
-    res |= es_write_reg(ES8388_ADDR, ES8388_DACCONTROL25, 0x1e);
+    res |= write_reg(ES8388_ADDR, ES8388_DACCONTROL24, 0x1e);
+    res |= write_reg(ES8388_ADDR, ES8388_DACCONTROL25, 0x1e);
 
     /* set LOUT2 / ROUT2 volume: 0dB (unattenuated) */
-    res |= es_write_reg(ES8388_ADDR, ES8388_DACCONTROL26, 0x1e);
-    res |= es_write_reg(ES8388_ADDR, ES8388_DACCONTROL27, 0x1e);
+    res |= write_reg(ES8388_ADDR, ES8388_DACCONTROL26, 0x1e);
+    res |= write_reg(ES8388_ADDR, ES8388_DACCONTROL27, 0x1e);
 
     /* power up and enable DAC; power up ADC (no MIC bias) */
-    res |= es_write_reg(ES8388_ADDR, ES8388_DACPOWER, 0x3c);
-    res |= es_write_reg(ES8388_ADDR, ES8388_DACCONTROL3, 0x00);
-    res |= es_write_reg(ES8388_ADDR, ES8388_ADCPOWER, 0x00);
+    res |= write_reg(ES8388_ADDR, ES8388_DACPOWER, 0x3c);
+    res |= write_reg(ES8388_ADDR, ES8388_DACCONTROL3, 0x00);
+    res |= write_reg(ES8388_ADDR, ES8388_ADCPOWER, 0x00);
 
     return res;
 }
 
-enum ES8388_OUT {
-    ES_OUT1,
-    ES_OUT2
-};
-
-void es_vol(ES8388_OUT out, uint8_t vol)
+void ES8388::vol(const ES8388_OUT out, const uint8_t vol)
 {
-    /* set LOUT2 / ROUT2 volume: 0dB (unattenuated) */
-    uint8_t vol_val = (0x21 * vol)/100;
-    es_write_reg(ES8388_ADDR, out ==  ES_OUT1?ES8388_DACCONTROL24: ES8388_DACCONTROL26, vol_val);
-    es_write_reg(ES8388_ADDR, out ==  ES_OUT1?ES8388_DACCONTROL25: ES8388_DACCONTROL27, vol_val);
+    const uint32_t max_vol = 100; // max input volume value 
+    const uint32_t max_vol_val = 0x21; // max register value for ES8388 out volume
 
+    uint8_t vol_val = vol > max_vol? max_vol_val : (max_vol_val * vol) / max_vol;
+    
+    write_reg(ES8388_ADDR, out == ES_OUT1 ? ES8388_DACCONTROL24 : ES8388_DACCONTROL26, vol_val);
+    write_reg(ES8388_ADDR, out == ES_OUT1 ? ES8388_DACCONTROL25 : ES8388_DACCONTROL27, vol_val);
 }
+
+
 class AudioKit : public Device
 {
 public:
@@ -220,8 +239,10 @@ public:
 private:
     void InitI2SSpeakerOrMic(int mode);
     AC101 ac;
+    ES8388 es8388;
+
     bool is_es = false;
-    bool is_2chan_out = false;
+    bool is_mono_stream_stereo_out = false;
     uint16_t key_listen;
 };
 
@@ -238,7 +259,7 @@ void AudioKit::init()
     if (is_es)
     {
         Serial.println("found ES8388");
-        es8388_init();
+        es8388.begin();
     }
     else
     {
@@ -269,10 +290,14 @@ void AudioKit::init()
     // pinMode(KEY_VOL_DOWN, INPUT_PULLUP);
 };
 
+/**
+ * @brief called to indicate state of device / service. LED D4 indicates "HOTWORD DETECTED/LISTEN MODE", LED D5 indicates  "WIFI DISCONNECT". Different brightness or colors
+ * are not supported on the AudioKit
+ * 
+ * @param colors used to indicate state to display, see device.h (enum LedColorState) for values 
+ */
 void AudioKit::updateColors(int colors)
 {
-    //Serial.printf("updateColors(%d)\n", colors);
-
     // turn off LEDs
     digitalWrite(LED_STREAM, HIGH);
     digitalWrite(LED_WIFI, HIGH);
@@ -332,7 +357,6 @@ void AudioKit::InitI2SSpeakerOrMic(int mode)
         tx_pin_config.ws_io_num = ES_CONFIG_I2S_LRCK_PIN;
         tx_pin_config.data_out_num = ES_CONFIG_I2S_DATA_PIN;
         tx_pin_config.data_in_num = ES_CONFIG_I2S_DATA_IN_PIN;
-
     }
     else
     {
@@ -372,7 +396,8 @@ void AudioKit::setWriteMode(int sampleRate, int bitDepth, int numChannels)
         {
             i2s_set_clk(SPEAKER_I2S_NUMBER, sampleRate, static_cast<i2s_bits_per_sample_t>(bitDepth), static_cast<i2s_channel_t>(numChannels));
         }
-        is_2chan_out = numChannels == 2;
+        // ES8388 is never put into mono mode, hence we have to handle this case
+        is_mono_stream_stereo_out = is_es && numChannels == 1;
     }
 }
 
@@ -387,12 +412,17 @@ void AudioKit::setReadMode()
 
 void AudioKit::writeAudio(uint8_t *data, size_t size, size_t *bytes_written)
 {
-    if (is_2chan_out || !is_es)
+    if (is_mono_stream_stereo_out == false)
     {
+        // input stream and I2S confguration have same number of channels
         i2s_write(SPEAKER_I2S_NUMBER, data, size, bytes_written, portMAX_DELAY);      
     }
     else
     {
+        // input stream is mono, I2S needs stereo, hence samples are send
+        // twice to I2S stream to create 2 channels
+        // HACK: This works ATM only for 16bit samples as sample size is hardcoded
+        // here
         uint16_t data2[size];
         uint16_t *data1 = (uint16_t *)data;
 
@@ -404,14 +434,12 @@ void AudioKit::writeAudio(uint8_t *data, size_t size, size_t *bytes_written)
         }
 
         i2s_write(SPEAKER_I2S_NUMBER, data2, 2 * size, bytes_written, portMAX_DELAY);
-        *bytes_written /= 2;
+        *bytes_written /= 2; // half the actual bytes written as we have double the stream size
     }
-    *bytes_written = size;
 }
 
 bool AudioKit::readAudio(uint8_t *data, size_t size)
 {
-
     size_t byte_read;
 
     if (!is_es)
@@ -420,6 +448,8 @@ bool AudioKit::readAudio(uint8_t *data, size_t size)
     }
     else
     {
+        // ES8388 returns stereo stream from Mic, but we need only one channel, 
+        // we drop channel 2 (right channel) here
         uint16_t data2[size];
         uint16_t *data1 = (uint16_t *)data;
 
@@ -447,11 +477,11 @@ void AudioKit::muteOutput(bool mute)
  */
 void AudioKit::setVolume(uint16_t volume)
 {
- 
     if (is_es)
     {
-        es_vol(ES_OUT1, volume);
-        es_vol(ES_OUT2, volume);
+        // ES8388 has two identical outputs for analog audio
+        es8388.vol(ES8388::ES_OUT1, volume); // speakers on AudioKit 
+        es8388.vol(ES8388::ES_OUT2, volume); // headphons on AudioKit
     }
     else
     {
@@ -463,6 +493,13 @@ void AudioKit::setVolume(uint16_t volume)
     }
 }
 
+/**
+ * @brief Regularily called to check if hotword is detected. Here no really detection takes 
+ * places, it is simply the press of a button which activates command listening mode.
+ * 
+ * @return true if listening key is pressed  
+ * @return false if listening key is not pressed
+ */
 bool AudioKit::isHotwordDetected()
 {
     // TODOD debounce maybe?
