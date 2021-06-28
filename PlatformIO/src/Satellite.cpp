@@ -90,6 +90,9 @@
    v7.5.1
     - Saving the configuration now reboots due to instablility issue in disconnecting MQTT
     - Remove hotword method from UI and hard setting to REMOTE until local works again
+   v7.6
+    - Using ESP32 IDF FreeRTOS wrapper for the ringbuffer should fix audio playback
+    - Support for ESP32 A1S 
 
 * ************************************************************************ */
 
