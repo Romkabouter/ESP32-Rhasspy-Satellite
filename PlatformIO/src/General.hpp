@@ -3,11 +3,11 @@
 #include <WiFi.h>
 #include <AsyncMqttClient.h>
 #include <PubSubClient.h>
-#include "RingBuf.h"
 #include "SPIFFS.h"
 #include "ESPAsyncWebServer.h"
 #include <ArduinoJson.h>
 #include "index_html.h"
+#include "Esp32RingBuffer.h"
 
 const int PLAY = BIT0;
 const int STREAM = BIT1;
@@ -70,7 +70,7 @@ std::string restartTopic = config.siteid + std::string("/restart");
 AsyncMqttClient asyncClient; 
 WiFiClient net;
 PubSubClient audioServer(net); 
-RingBuf<uint8_t, 60000> audioData;
+Esp32RingBuffer<uint8_t, uint16_t, (1U << 15)> audioData;
 long message_size = 0;
 int queueDelay = 10;
 int sampleRate = 16000;
@@ -145,8 +145,6 @@ XT_Wav_Class::XT_Wav_Class(const unsigned char *WavData) {
         ofs += longword(WavData, ofs + 4) + 8;
     }
 }
-
-uint8_t WaveData[44];
 
 // this function supplies template variables to the template engine
 String processor(const String& var){

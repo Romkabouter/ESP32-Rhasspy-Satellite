@@ -104,6 +104,11 @@
 #define INMP441 3
 #define INMP441MAX98357A 4
 
+#ifdef PI_DEVICE_TYPE
+#undef DEVICE_TYPE
+#define DEVICE_TYPE PI_DEVICE_TYPE
+#endif
+
 
 // This is where you can include your device, make sure to create a *device
 // The *device is used to call methods
@@ -122,13 +127,15 @@
 #elif DEVICE_TYPE == INMP441MAX98357A
   #include "devices/Inmp441Max98357a.hpp"
   Inmp441Max98357a *device = new Inmp441Max98357a();
+#else
+  #error DEVICE_TYPE is out of range  
 #endif
 
 #include <General.hpp>
 #include <StateMachine.hpp>
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(921000);
   Serial.println("Booting");
 
   if (wbSemaphore == NULL)  // Not yet been created?
