@@ -344,6 +344,7 @@ std::vector<std::string> explode( const std::string &delimiter, const std::strin
 void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) {
   std::string topicstr(topic);
   std::string sessionid;
+  Serial.printf("len: %d, index: %d, next index: %d, total: %d\r\n", (int)len, (int)index, (int)index + (int)len, (int)total);
   if (len + index == total) {
     if (topicstr.find("toggleOff") != std::string::npos) {
       std::string payloadstr(payload);
@@ -377,6 +378,9 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
       }
     } else if (topicstr.find("playBytes") != std::string::npos || topicstr.find("playBytesStreaming") != std::string::npos) {  
       std::vector<std::string> topicparts = explode("/", topicstr);
+      if (!audioData.isEmpty() && xEventGroupGetBits(audioGroup) != PLAY) {
+        send_event(PlayAudioEvent());
+      }      
       if (topicstr.find("playBytesStreaming") != std::string::npos) {
           streamingBytes = true;
           // Get the ID from the topic
@@ -393,10 +397,9 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
       }
       for (int i = 0; i < len; i++) {
         while (audioData.isFull()) {
-          if (xEventGroupGetBits(audioGroup) != PLAY) {
-            send_event(PlayAudioEvent());
-          }
-          vTaskDelay(10 / portTICK_PERIOD_MS);
+          Serial.println("Pausing");
+          asyncClient.pause();
+          vTaskDelay(5 / portTICK_PERIOD_MS);
         }
         audioData.push((uint8_t)payload[i]);
       }
@@ -512,6 +515,9 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
   } else {
     // len + index < total ==> partial message
     if (topicstr.find("playBytes") != std::string::npos || topicstr.find("playBytesStreaming") != std::string::npos) {
+      if (!audioData.isEmpty() && xEventGroupGetBits(audioGroup) != PLAY) {
+        send_event(PlayAudioEvent());
+      }      
       if (index == 0) {
         message_size = total;
         audioData.clear();
@@ -533,24 +539,22 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
         }
         for (int i = 44; i < len; i++) {
           while (audioData.isFull()) {
-            if (xEventGroupGetBits(audioGroup) != PLAY) {
-              Serial.println("PlayAudioEvent");
-              send_event(PlayAudioEvent());
-            }
-            vTaskDelay(10 / portTICK_PERIOD_MS);
+            Serial.println("Pausing");
+            asyncClient.pause();
+            vTaskDelay(50 / portTICK_PERIOD_MS);
           }
           audioData.push((uint8_t)payload[i]);
         }
       } else {
         for (int i = 0; i < len; i++) {
           while (audioData.isFull()) {
-            if (xEventGroupGetBits(audioGroup) != PLAY) {
-              send_event(PlayAudioEvent());
-            }
-            vTaskDelay(10 / portTICK_PERIOD_MS);
+            Serial.println("Pausing");
+            asyncClient.pause();
+            vTaskDelay(50 / portTICK_PERIOD_MS);
           }
           audioData.push((uint8_t)payload[i]);
         }
+      //  Serial.printf("Buffersize read: %d\r\n", (int)audioData.size());
       }
     }
   }
@@ -575,9 +579,10 @@ void I2Stask(void *p) {
             for (int i = 0; i < bytes_to_write; i++) {
               if (!audioData.pop(data[i])) {
                 data[i] = 0;
-                Serial.println("Buffer underflow");
+              //  Serial.println("Buffer underflow");
               }
             }
+            Serial.printf("Buffersize play: %d\r\n", (int)audioData.size());
             played = played + bytes_to_write;
             if (!config.mute_output) {
               device->muteOutput(false);
@@ -619,12 +624,6 @@ void I2Stask(void *p) {
             uint8_t payload[sizeof(header) + messageBytes];
             const int message_count = sizeof(data) / messageBytes;
             for (int i = 0; i < message_count; i++) {
-             // time_t now;
-             // time(&now);
-             // struct tm timeinfo;
-             // char strftime_buf[64];
-             // strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
-             // strncpy(header.timestamp, (char*)strftime_buf , 64);
               memcpy(payload, &header, sizeof(header));
               memcpy(&payload[sizeof(header)], &data[messageBytes * i], messageBytes);
               audioServer.publish(audioFrameTopic.c_str(),(uint8_t *)payload, sizeof(payload));
@@ -653,12 +652,8 @@ void initHeader(int readSize, int width, int rate) {
     strncpy(header.wave_tag, "WAVE", 4);
     strncpy(header.fmt_tag, "fmt ", 4);
     strncpy(header.data_tag, "data", 4);
-    //strncpy(header.time, "time", 4);
-    //header.timevalue = 8;
-//    header.timestamp1 = 1621840480612;
 
     header.riff_length = (uint32_t)sizeof(header) + (readSize * width);
-//    header.riff_length = 564;//(uint32_t)sizeof(header) + (readSize * width);
     header.fmt_length = 16;
     header.audio_format = 1;
     header.num_channels = 1;

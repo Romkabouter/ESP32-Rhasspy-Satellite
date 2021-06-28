@@ -49,10 +49,6 @@ struct wavfile_header {
     int byte_rate;          // 4
     short block_align;      // 2
     short bits_per_sample;  // 2
-    // char time[4];
-    // int timevalue;
-    // int timestamp1;
-    // int timestamp2;
     char data_tag[4];       // 4
     int data_length;        // 4
 };
@@ -65,6 +61,7 @@ bool mqttConnected = false;
 bool DEBUG = false;
 bool streamingBytes = false;
 bool endStream = false;
+bool mqttPaused = false;
 std::string audioFrameTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/audioFrame");
 std::string playBytesTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/playBytes/#");
 std::string playBytesStreamingTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/playBytesStreaming/#");

@@ -19,7 +19,7 @@ if [ "$1" = "" ]; then
 else
   if test -f "$FIRMWARE"; then
     echo ""
-    cp .pio/build/esp32dev/firmware.bin .
+   # cp .pio/build/esp32dev/firmware.bin .
     cp .pio/build/esp32dev/partitions.bin .
     echo "Loading firmware: $FIRMWARE to $1"
     echo ""

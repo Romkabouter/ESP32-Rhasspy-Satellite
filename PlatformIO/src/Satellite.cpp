@@ -180,8 +180,8 @@ void setup() {
 
   fsm::start();
 
-  server.on("/", handleRequest);
-  server.begin();
+  // server.on("/", handleRequest);
+  // server.begin();
 }
 
 void loop() {
