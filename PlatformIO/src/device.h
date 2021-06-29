@@ -1,3 +1,5 @@
+#pragma once
+
 int hotword_colors[4] = {0, 255, 0, 0};
 int idle_colors[4] = {0, 0, 255, 0};
 int wifi_conn_colors[4] = {0, 0, 255, 0};
