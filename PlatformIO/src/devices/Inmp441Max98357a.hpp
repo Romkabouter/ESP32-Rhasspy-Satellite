@@ -1,3 +1,7 @@
+#pragma once
+#include <Arduino.h>
+#include <device.h>
+
 #include <driver/i2s.h>
 #include "IndicatorLight.h"
 
