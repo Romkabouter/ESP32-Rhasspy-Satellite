@@ -1,3 +1,7 @@
+#pragma once
+#include <Arduino.h>
+#include <device.h>
+
 #include <driver/i2s.h>
 
 
@@ -16,8 +20,8 @@
 #define I2S_READ_LEN      512
 
 // LEDs
-#define LED1 4
-#define LED2 33
+#define LED_STREAM 4
+#define LED_WIFI 33
 
 
 // class DetectWakeWordState;

@@ -1,3 +1,5 @@
+#pragma once
+
 int hotword_colors[4] = {0, 255, 0, 0};
 int idle_colors[4] = {0, 0, 255, 0};
 int wifi_conn_colors[4] = {0, 0, 255, 0};
@@ -10,7 +12,8 @@ enum {
   COLORS_IDLE = 3,
   COLORS_OTA = 4
 };
-enum {
+enum DeviceMode {
+  MODE_UNUSED = -1, // indicates the no explicit mode change has been stored yet 
   MODE_MIC = 0,
   MODE_SPK = 1
 };
@@ -24,7 +27,8 @@ enum {
 
 class Device {
   protected:
-    int mode;
+     // for derived classes which switch between read and write mode, we store there which mode is active. Otherwise it should remain as MODE_UNUSED
+    DeviceMode mode = MODE_UNUSED; 
   public:
      //You can init your device here if needed
     virtual void init() {};

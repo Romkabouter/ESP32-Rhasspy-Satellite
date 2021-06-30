@@ -1,3 +1,5 @@
+#pragma once
+
 #include <tinyfsm.hpp>
 #include <Arduino.h>
 #include <WiFi.h>
