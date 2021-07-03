@@ -123,6 +123,7 @@ class ES8388
 {
 
     bool write_reg(uint8_t slave_add, uint8_t reg_add, uint8_t data);
+    bool read_reg(uint8_t slave_add, uint8_t reg_add, uint8_t& data);
     bool identify(int sda, int scl, uint32_t frequency);
 
     public:
@@ -130,10 +131,12 @@ class ES8388
     bool begin(int sda = -1, int scl = -1, uint32_t frequency = 400000U);
 
     enum ES8388_OUT {
-    ES_OUT1,
-    ES_OUT2
+    ES_MAIN,    // this is the DAC output volume (both outputs)    
+    ES_OUT1,    // this is the additional gain for OUT1
+    ES_OUT2     // this is the additional gain for OUT2 
     };
 
+    void mute(const  ES8388_OUT out, const bool muted);
     void volume(const  ES8388_OUT out, const uint8_t vol);
 
 };
@@ -144,6 +147,21 @@ bool ES8388::write_reg(uint8_t slave_add, uint8_t reg_add, uint8_t data)
     Wire.write(reg_add);
     Wire.write(data);
     return Wire.endTransmission() == 0;
+}
+
+bool ES8388::read_reg(uint8_t slave_add, uint8_t reg_add, uint8_t& data)
+{
+    bool retval = false;
+    Wire.beginTransmission(slave_add);
+    Wire.write(reg_add);
+    Wire.endTransmission(false);
+    Wire.requestFrom((uint16_t)slave_add, (uint8_t)1, true);
+    if (Wire.available() >= 1)
+    {
+        data = Wire.read();
+        retval = true;
+    }
+    return retval;
 }
 
 bool ES8388::begin(int sda, int scl, uint32_t frequency)
@@ -211,17 +229,88 @@ bool ES8388::begin(int sda, int scl, uint32_t frequency)
     return res;
 }
 
+/**
+ * @brief (un)mute one of the two outputs or main dac output of the ES8388 by switching of the output register bits. Does not really mute the selected output, causes an attenuation. 
+ * hence should be used in conjunction with appropriate volume setting. Main dac output mute does mute both outputs
+ * 
+ * @param out 
+ * @param muted 
+ */
+void ES8388::mute(const ES8388_OUT out, const bool muted)
+{
+    uint8_t reg_addr;
+    uint8_t mask_mute;
+    uint8_t mask_val;
+
+    switch(out)
+    {
+    case ES_OUT1:
+        reg_addr = ES8388_DACPOWER;
+        mask_mute =(3 << 4);
+        mask_val = muted ? 0 : mask_mute;
+        break;
+    case ES_OUT2:
+        reg_addr = ES8388_DACPOWER;
+        mask_mute =(3 << 2);
+        mask_val = muted ? 0 : mask_mute;
+        break;
+    case ES_MAIN: 
+    default:
+        reg_addr = ES8388_DACCONTROL3;
+        mask_mute = 1 << 2;
+        mask_val = muted ? mask_mute : 0;
+        break;
+    }
+
+    uint8_t reg;
+    if (read_reg(ES8388_ADDR, reg_addr, reg))
+    {
+        reg = (reg & ~mask_mute) | (mask_val & mask_mute);
+        write_reg(ES8388_ADDR, reg_addr, reg);
+    }
+}
+
+/**
+ * @brief Set volume gain for the main dac, or for one of the two output channels. Final gain = main gain + out channel gain 
+ * 
+ * @param out which gain setting to control
+ * @param vol 0-100 (100 is max)
+ */
 void ES8388::volume(const ES8388_OUT out, const uint8_t vol)
 {
     const uint32_t max_vol = 100; // max input volume value 
-    const uint32_t max_vol_val = 0x21; // max register value for ES8388 out volume
+    
+    const int32_t max_vol_val = out == ES8388_OUT::ES_MAIN? 96 : 0x21; // max register value for ES8388 out volume
+
+
+    uint8_t lreg = 0, rreg = 0;
+
+    switch (out)
+    {
+        case ES_MAIN: lreg = ES8388_DACCONTROL4; rreg = ES8388_DACCONTROL5; break;
+        case ES_OUT1: lreg = ES8388_DACCONTROL24; rreg = ES8388_DACCONTROL25; break;
+        case ES_OUT2: lreg = ES8388_DACCONTROL26; rreg = ES8388_DACCONTROL27; break;
+    }
 
     uint8_t vol_val = vol > max_vol? max_vol_val : (max_vol_val * vol) / max_vol;
-    
-    write_reg(ES8388_ADDR, out == ES_OUT1 ? ES8388_DACCONTROL24 : ES8388_DACCONTROL26, vol_val);
-    write_reg(ES8388_ADDR, out == ES_OUT1 ? ES8388_DACCONTROL25 : ES8388_DACCONTROL27, vol_val);
+
+    // main dac volume control is reverse scale (lowest value is loudest)
+    // hence we reverse the calculated value
+    if (out == ES_MAIN) { vol_val = max_vol_val - vol_val; }
+
+    write_reg(ES8388_ADDR, lreg, vol_val);
+    write_reg(ES8388_ADDR, rreg, vol_val);
 }
 
+/**
+ * @brief Test if device with I2C address for ES8388 is connected to the I2C bus 
+ * 
+ * @param sda which pin to use for I2C SDA
+ * @param scl which pin to use for I2C SCL
+ * @param frequency which frequency to use as I2C bus frequency
+ * @return true device was found
+ * @return false device was not found
+ */
 bool ES8388::identify(int sda, int scl, uint32_t frequency)
 {
     Wire.begin(sda, scl, frequency);
@@ -246,7 +335,7 @@ public:
 
     // ESP-Audio-Kit has speaker and headphone as outputs
     // TODO
-    // void ampOutput(int output) {};
+    void ampOutput(int output);
     void setVolume(uint16_t volume);
 
     bool isHotwordDetected();
@@ -255,6 +344,10 @@ private:
     void InitI2SSpeakerOrMic(int mode);
     AC101 ac;
     ES8388 es8388;
+
+    uint8_t out_vol;
+
+    AmpOut out_amp = AMP_OUT_SPEAKERS;
 
     bool is_es = false;
     bool is_mono_stream_stereo_out = false;
@@ -302,7 +395,7 @@ void AudioKit::init()
     // pinMode(KEY_VOL_DOWN, INPUT_PULLUP);
 
     // now initialize read mode 
-    setReadMode();
+    // setReadMode();
 };
 
 /**
@@ -487,7 +580,14 @@ bool AudioKit::readAudio(uint8_t *data, size_t size)
 
 void AudioKit::muteOutput(bool mute)
 {
-    digitalWrite(GPIO_PA_EN, mute ? LOW : HIGH);
+    if (is_es)
+    {
+        es8388.mute(ES8388::ES_MAIN, mute);
+    }
+    else
+    {
+        digitalWrite(GPIO_PA_EN, mute ? LOW : HIGH);
+    }
 }
 
 /**
@@ -497,16 +597,16 @@ void AudioKit::muteOutput(bool mute)
  */
 void AudioKit::setVolume(uint16_t volume)
 {
+    out_vol = volume;
+
     if (is_es)
     {
-        // ES8388 has two identical outputs for analog audio
-        es8388.volume(ES8388::ES_OUT1, volume); // speakers on AudioKit 
-        es8388.volume(ES8388::ES_OUT2, volume); // headphons on AudioKit
+        es8388.volume(ES8388::ES_MAIN, out_vol);  
     }
     else
     {
         // volume is 0 to 100, needs to be 0 to 63
-        const uint8_t vol = (uint8_t)(volume / 100.0f * 63.0f);
+        const uint8_t vol = (uint8_t)(out_vol / 100.0f * 63.0f);
 
         ac.SetVolumeHeadphone(vol);
         ac.SetVolumeSpeaker(vol);
@@ -524,4 +624,41 @@ bool AudioKit::isHotwordDetected()
 {
     // TODOD debounce maybe?
     return digitalRead(key_listen) == LOW;
+}
+
+void AudioKit::ampOutput(int ampOut)
+{
+    // spk, headphone
+    bool mute[] = {false, false};
+
+    switch (ampOut)
+    {
+    case AmpOut::AMP_OUT_SPEAKERS:
+        digitalWrite(GPIO_PA_EN, HIGH);
+        mute[0] = false;
+        mute[1] = true;
+        break;
+
+    case AmpOut::AMP_OUT_HEADPHONE:
+        digitalWrite(GPIO_PA_EN, LOW);
+        mute[0] = true;
+        mute[1] = false;
+        break;
+    }
+
+    digitalWrite(GPIO_PA_EN, mute[0] ? LOW : HIGH);
+    if (is_es)
+    {
+        es8388.mute(ES8388::ES_OUT2, mute[1]);
+        es8388.volume(ES8388::ES_OUT2, mute[1] ? 0 : 100);
+
+        es8388.mute(ES8388::ES_OUT1, mute[0]);
+        es8388.volume(ES8388::ES_OUT1, mute[0] ? 0 : 100);
+    }
+    else
+    {
+        const uint8_t vol = (out_vol * 63)/100;
+        ac.SetVolumeSpeaker(mute[0]?vol:0);
+        ac.SetVolumeSpeaker(mute[1]?vol:0);
+    }
 }

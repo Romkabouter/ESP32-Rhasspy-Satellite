@@ -20,7 +20,7 @@ enum DeviceMode {
 
 //Devices can have several outputs. 
 //The Matrix Voice has an jack and a speaker
-enum {
+enum AmpOut {
   AMP_OUT_SPEAKERS = 0,
   AMP_OUT_HEADPHONE = 1
 };
