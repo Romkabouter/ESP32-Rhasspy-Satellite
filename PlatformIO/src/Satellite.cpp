@@ -90,6 +90,9 @@
    v7.5.1
     - Saving the configuration now reboots due to instablility issue in disconnecting MQTT
     - Remove hotword method from UI and hard setting to REMOTE until local works again
+   v7.6
+    - Using ESP32 IDF FreeRTOS wrapper for the ringbuffer should fix audio playback
+    - Support for ESP32 A1S 
 
 * ************************************************************************ */
 
@@ -113,6 +116,11 @@
 #define INMP441MAX98357A 4
 #define ESP32_POE_ISO 5
 
+#ifdef PI_DEVICE_TYPE
+#undef DEVICE_TYPE
+#define DEVICE_TYPE PI_DEVICE_TYPE
+#endif
+
 
 // This is where you can include your device, make sure to create a *device
 // The *device is used to call methods
@@ -134,6 +142,8 @@
 #elif DEVICE_TYPE == ESP32_POE_ISO
   #include "devices/Esp32_poe_iso.hpp"
   Esp32_poe_iso *device = new Esp32_poe_iso();
+#else
+  #error DEVICE_TYPE is out of range  
 #endif
 
 #include <General.hpp>

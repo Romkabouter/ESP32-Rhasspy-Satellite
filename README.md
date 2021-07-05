@@ -64,8 +64,8 @@ Restart the device by publishing {"passwordhash":"yourpasswordhash"} to SITEID/r
 
 ## Known issues
 
-- Uploading sometimes fails or an error is thrown when the uploading is done.
-- Audio playback with sample rate higher than 22050 can lead to hissing/cracking/distortion. Recommended is to use a samplerate of 16000
+- Uploading sometimes fails or an error is thrown when the uploading is done. Lower the uploadspeed to fix it
+- Audio playback with sample rate higher than 44100 can lead to jitter due to network. Recommended is to use a samplerate of 16000 or 22050
 - Audio playback with matrix voice is not good, code needs to resample to 44100. WIP
 - Update colors do not work yet
 

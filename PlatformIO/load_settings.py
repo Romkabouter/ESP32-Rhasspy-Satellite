@@ -54,11 +54,6 @@ if os.path.isfile(settings):
 
     env.Append(CPPDEFINES=cpp_defines)
 
-    if (config[sectionOta]["method"] == "upload") :
-        env.Replace(
-            TARGETS="upload",
-        )
-
     if (config[sectionOta]["method"] == "matrix") :
         env.Replace(
             UPLOAD_PROTOCOL="custom",

@@ -1,3 +1,7 @@
+#pragma once
+#include <Arduino.h>
+#include <device.h>
+
 #include "everloop.h"
 #include "everloop_image.h"
 #include "microphone_array.h"
