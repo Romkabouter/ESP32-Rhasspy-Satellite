@@ -10,6 +10,7 @@
 #include <ArduinoJson.h>
 #include "index_html.h"
 #include "Esp32RingBuffer.h"
+#include <map>
 
 const int PLAY = BIT0;
 const int STREAM = BIT1;
@@ -61,6 +62,7 @@ int retryCount = 0;
 int I2SMode = -1;
 bool mqttConnected = false;
 bool DEBUG = false;
+
 std::string audioFrameTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/audioFrame");
 std::string playBytesTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/playBytes/#");
 std::string playFinishedTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/playFinished");
@@ -148,54 +150,57 @@ XT_Wav_Class::XT_Wav_Class(const unsigned char *WavData) {
     }
 }
 
+
+// to add more variables use a C++ lambda, it must either directly return a String, or specify return type ("-> String"), or both 
+const std::map<const std::string, String (*)()> processor_values = {
+    {"MQTT_HOST",           []() -> String { return config.mqtt_host.c_str();} },
+    {"MQTT_PORT",           []() { return String(config.mqtt_port);} },
+    {"MQTT_USER",           []() -> String { return config.mqtt_user.c_str(); } },
+    {"MQTT_PASS",           []() -> String { return config.mqtt_pass.c_str(); } },
+    {"MUTE_INPUT",          []() -> String { return (config.mute_input) ? "checked" : ""; } },
+    {"MUTE_OUTPUT",         []() -> String { return(config.mute_output) ? "checked" : ""; } },
+    {"AMP_OUT_SPEAKERS",    []() -> String { return device->numAmpOutConfigurations() < 1? "hidden" : (config.amp_output == AMP_OUT_SPEAKERS) ? "selected" : ""; } },
+    {"AMP_OUT_HEADPHONE",   []() -> String { return device->numAmpOutConfigurations() < 2? "hidden" : (config.amp_output == AMP_OUT_HEADPHONE) ? "selected" : ""; } },
+    {"AMP_OUT_BOTH",        []() -> String { return device->numAmpOutConfigurations() < 3? "hidden" : (config.amp_output == AMP_OUT_BOTH) ? "selected" : ""; } },
+    {"BRIGHTNESS",          []() { return String(config.brightness); } },
+    {"HW_BRIGHTNESS",       []() { return String(config.hotword_brightness); } },
+    {"HW_LOCAL",            []() -> String { return (config.hotword_detection == HW_LOCAL) ? "selected" : ""; } },
+    {"HW_REMOTE",           []() -> String { return (config.hotword_detection == HW_REMOTE) ? "selected" : ""; } },
+    {"VOLUME",              []() { return String(config.volume); } },
+    {"GAIN",                []() { return String(config.gain); } },
+    {"SITEID",              []() -> String { return config.siteid.c_str(); } },
+};
+
 // this function supplies template variables to the template engine
 String processor(const String& var){
-  if(var == "MQTT_HOST"){
-      return String(config.mqtt_host.c_str());
-  }
-  if(var == "MQTT_PORT"){
-      return String(config.mqtt_port);
-  }
-  if(var == "MQTT_USER"){
-      return String(config.mqtt_user.c_str());
-  }
-  if(var == "MQTT_PASS"){
-      return String(config.mqtt_pass.c_str());
-  }
-  if (var == "MUTE_INPUT") {
-      return (config.mute_input) ? "checked" : "";
-  }
-  if (var == "MUTE_OUTPUT") {
-      return (config.mute_output) ? "checked" : "";
-  }
-  if (var == "AMP_OUT_SPEAKERS") {
-      return (config.amp_output == AMP_OUT_SPEAKERS) ? "selected" : "";
-  }
-  if (var == "AMP_OUT_HEADPHONE") {
-      return (config.amp_output == AMP_OUT_HEADPHONE) ? "selected" : "";
-  }
-  if (var == "BRIGHTNESS") {
-      return String(config.brightness);
-  }
-  if (var == "HW_BRIGHTNESS") {
-      return String(config.hotword_brightness);
-  }
-  if (var == "HW_LOCAL") {
-      return (config.hotword_detection == HW_LOCAL) ? "selected" : "";
-  }
-  if (var == "HW_REMOTE") {
-      return (config.hotword_detection == HW_REMOTE) ? "selected" : "";
-  }
-  if (var == "VOLUME") {
-      return String(config.volume);
-  }
-  if (var == "GAIN") {
-      return String(config.gain);
-  }
-  if (var == "SITEID") {
-      return String(config.siteid.c_str());
-  }
-  return String();
+    auto item = processor_values.find(var.c_str());
+    return item != processor_values.end() ? item->second() : String();
+}
+
+// if there is not specialization for the given result type, we assume the html parameter is a integer number and can
+// be casted to the target type
+template <typename T> T processParamConvert(AsyncWebParameter *p) { return (T)p->value().toInt();}
+
+// for bool result type we check if the returned parameter is "on" -> true, otherwise false
+template <> bool processParamConvert(AsyncWebParameter *p) { return p->value().equals("on");}
+
+// for strings we return a string object
+template <> std::string processParamConvert(AsyncWebParameter *p) { return p->value().c_str();}
+
+template <typename T> bool processParam(AsyncWebParameter *p, const char* p_name, T& p_val)
+{
+    bool retval = false;
+    if (p->name() == p_name)
+    {
+        T new_p_val = processParamConvert<T>(p);
+        if (p_val != new_p_val)
+        {
+            Serial.printf("%s changed\n",p_name);
+            p_val = new_p_val;
+            retval = true;
+        }
+    }
+    return retval;
 }
 
 void handleFSf ( AsyncWebServerRequest* request, const String& route ) {
@@ -211,100 +216,26 @@ void handleFSf ( AsyncWebServerRequest* request, const String& route ) {
             for(int i=0;i<params;i++){
                 AsyncWebParameter* p = request->getParam(i);
                 Serial.printf("Parameter %s, value %s\r\n", p->name().c_str(), p->value().c_str());
-                if(p->name() == "siteid"){
-                    if (config.siteid != std::string(p->value().c_str())) {
-                        Serial.println("siteID changed");
-                        config.siteid = std::string(p->value().c_str());
-                        saveNeeded = true;
-                    }
-                }
-                if(p->name() == "mqtt_host"){
-                    if (config.mqtt_host != std::string(p->value().c_str())) {
-                        Serial.println("Mqtt host changed");
-                        config.mqtt_host = std::string(p->value().c_str());
-                        saveNeeded = true;
-                    }
-                }
-                if(p->name() == "mqtt_port"){
-                    if (config.mqtt_port != (int)p->value().toInt()) {
-                        Serial.println("Mqtt port changed");
-                        config.mqtt_port = (int)p->value().toInt(); 
-                        saveNeeded = true;
-                    }
-                }
-                if(p->name() == "mqtt_user"){
-                    if (config.mqtt_user != std::string(p->value().c_str())) {
-                        Serial.println("Mqtt user changed");
-                        config.mqtt_user = std::string(p->value().c_str());
-                        saveNeeded = true;
-                    }
-                }
-                if(p->name() == "mqtt_pass"){
-                    if (config.mqtt_pass != std::string(p->value().c_str())) {
-                        Serial.println("Mqtt password changed");
-                        config.mqtt_pass = std::string(p->value().c_str()); 
-                        saveNeeded = true;
-                    }
-                }
-                if(p->name() == "mute_input"){
-                    mi_found = true;
-                    if (!config.mute_input && p->value().equals("on")) {
-                        Serial.println("Mute input changed");
-                        config.mute_input = true;   
-                        saveNeeded = true;
-                    }
-                }
-                if(p->name() == "mute_output"){
-                    mo_found = true;
-                    if (!config.mute_output && p->value().equals("on")) {
-                        Serial.println("Mute output changed");
-                        config.mute_output = true;       
-                        saveNeeded = true;
-                    }
-                }
-                if(p->name() == "amp_output"){
-                    if (config.amp_output != (int)p->value().toInt()) {
-                        Serial.println("Amp output changed");
-                        config.amp_output = (p->value().equals("0")) ? AMP_OUT_SPEAKERS : AMP_OUT_HEADPHONE;       
-                        saveNeeded = true;
-                    }
-                }
-                if(p->name() == "brightness"){
-                    if (config.brightness != (int)p->value().toInt()) {
-                        Serial.println("Brightness changed");
-                        config.brightness = (int)p->value().toInt();      
-                        saveNeeded = true;
-                    }
-                }
-                if(p->name() == "hw_brightness"){
-                    if (config.hotword_brightness != (int)p->value().toInt()) {
-                        Serial.println("Hotword brightness changed");
-                        config.hotword_brightness = (int)p->value().toInt();
-                        saveNeeded = true;
-                    }
-                }
-                if(p->name() == "hotword_detection"){
-                    if (config.hotword_detection != (int)p->value().toInt()) {
-                        Serial.println("Hotword detection changed");
-                        config.hotword_detection = (p->value().equals("0")) ? HW_LOCAL : HW_REMOTE;       
-                        saveNeeded = true;
-                    }
-                }
-                if(p->name() == "gain"){
-                    if (config.gain != (int)p->value().toInt()) {
-                        Serial.println("Gain changed");
-                        config.gain = (int)p->value().toInt();      
-                        saveNeeded = true;
-                    }
-                }
-                if(p->name() == "volume"){
-                    if (config.volume != (int)p->value().toInt()) {
-                        Serial.println("Volume changed");
-                        config.volume = (int)p->value().toInt();      
-                        saveNeeded = true;
-                    }
-                }
+
+                saveNeeded |= processParam(p, "siteid", config.siteid);
+                saveNeeded |= processParam(p, "mqtt_host", config.mqtt_host);
+                saveNeeded |= processParam(p, "mqtt_pass", config.mqtt_pass);
+                saveNeeded |= processParam(p, "mqtt_user", config.mqtt_user);
+                saveNeeded |= processParam(p, "mqtt_port", config.mqtt_port);
+                saveNeeded |= processParam(p, "mute_input", config.mute_input);
+                saveNeeded |= processParam(p, "mute_output", config.mute_output);
+                saveNeeded |= processParam(p, "amp_output", config.amp_output);
+                saveNeeded |= processParam(p, "brightness", config.brightness);
+                saveNeeded |= processParam(p, "hw_brightness", config.hotword_brightness);
+                saveNeeded |= processParam(p, "hotword_detection", config.hotword_detection);
+                saveNeeded |= processParam(p, "gain", config.gain);
+                saveNeeded |= processParam(p, "volume", config.volume);
+
+                mi_found |= (p->name() == "mute_input");
+                mo_found |= (p->name() == "mute_output");
+
             }
+
             if (!mi_found && config.mute_input) {
                 Serial.println("Mute input not found, value = off");
                 config.mute_input = false;
