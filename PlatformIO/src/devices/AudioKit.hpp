@@ -39,11 +39,11 @@
 
 // Audiokit Buttons
 #define KEY1_GPIO GPIO_NUM_36
-#define KEY2_GPIO GPIO_NUM_13
-#define KEY3_GPIO GPIO_NUM_19 // also LED D4
-#define KEY4_GPIO GPIO_NUM_23 // do not use on V2.3 -> I2C ES8388
-#define KEY5_GPIO GPIO_NUM_18 // do not use on V2.3 -> I2C ES8388
-#define KEY6_GPIO GPIO_NUM_5  // do not use on V2.3 -> I2S
+#define KEY2_GPIO GPIO_NUM_13 // may be in use for other purposes, see onboard config switch
+#define KEY3_GPIO GPIO_NUM_19 // also activates LED D4 if pressed
+#define KEY4_GPIO GPIO_NUM_23 // do not use on A1S V2.3 -> I2C ES8388
+#define KEY5_GPIO GPIO_NUM_18 // do not use on A1S V2.3 -> I2C ES8388
+#define KEY6_GPIO GPIO_NUM_5  // do not use on A1S V2.3 -> I2S
 
 // alias
 #define KEY_LISTEN KEY3_GPIO
@@ -77,13 +77,14 @@ public:
 
     bool isHotwordDetected();
 
+    int numAmpOutConfigurations() { return 3; };
+
 private:
     void InitI2SSpeakerOrMic(int mode);
     AC101 ac;
     ES8388Control es8388;
 
     uint8_t out_vol;
-
     AmpOut out_amp = AMP_OUT_SPEAKERS;
 
     bool is_es = false;
@@ -317,13 +318,24 @@ bool AudioKit::readAudio(uint8_t *data, size_t size)
 
 void AudioKit::muteOutput(bool mute)
 {
-    if (is_es)
-    {
-        es8388.mute(ES8388Control::ES_MAIN, mute);
-    }
-    else
+    // switching the amp power prevents klicking noise reaching the speaker 
+    if (out_amp != AmpOut::AMP_OUT_HEADPHONE)
     {
         digitalWrite(GPIO_PA_EN, mute ? LOW : HIGH);
+    }
+
+    if (out_amp != AmpOut::AMP_OUT_SPEAKERS)
+    {
+        if (is_es)
+        {
+            // ES8388: we mute main dac
+            es8388.mute(ES8388Control::ES_MAIN, mute);
+        }
+        else
+        {
+            // AC101: we just mute the headphone 
+            ac.SetVolumeHeadphone(mute? 0: (out_vol * 63)/100);
+        }
     }
 }
 
@@ -345,13 +357,25 @@ void AudioKit::setVolume(uint16_t volume)
         // volume is 0 to 100, needs to be 0 to 63
         const uint8_t vol = (uint8_t)(out_vol / 100.0f * 63.0f);
 
-        ac.SetVolumeHeadphone(vol);
-        ac.SetVolumeSpeaker(vol);
+        switch(out_amp)
+        {
+        case AmpOut::AMP_OUT_SPEAKERS:
+            ac.SetVolumeSpeaker(vol); 
+            break;
+        case AmpOut::AMP_OUT_HEADPHONE:
+            ac.SetVolumeHeadphone(vol);
+            break;
+        case AmpOut::AMP_OUT_BOTH:
+            ac.SetVolumeSpeaker(vol);
+            ac.SetVolumeHeadphone(vol);
+            break;
+
+        }
     }
 }
 
 /**
- * @brief Regularily called to check if hotword is detected. Here no really detection takes 
+ * @brief Regularily called to check if hotword is detected. Here no real detection takes 
  * places, it is simply the press of a button which activates command listening mode.
  * 
  * @return true if listening key is pressed  
@@ -365,10 +389,12 @@ bool AudioKit::isHotwordDetected()
 
 void AudioKit::ampOutput(int ampOut)
 {
-    // spk, headphone
-    bool mute[] = {false, false};
+    out_amp = (AmpOut)ampOut;
 
-    switch (ampOut)
+    // spk, headphone
+    bool mute[2] = {false, false};
+
+    switch (out_amp)
     {
     case AmpOut::AMP_OUT_SPEAKERS:
         mute[0] = false;
@@ -379,6 +405,9 @@ void AudioKit::ampOutput(int ampOut)
         mute[0] = true;
         mute[1] = false;
         break;
+    default:
+        mute[0] = false;
+        mute[1] = false;
     }
 
     digitalWrite(GPIO_PA_EN, mute[0] ? LOW : HIGH);

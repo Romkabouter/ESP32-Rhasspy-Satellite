@@ -43,6 +43,9 @@ class Inmp441Max98357a : public Device
     void setWriteMode(int sampleRate, int bitDepth, int numChannels);
     void writeAudio(uint8_t *data, size_t size, size_t *bytes_written);
     IndicatorLight *indicator_light = new IndicatorLight(LED_FLASH);
+
+    int numAmpOutConfigurations() { return 1; };
+    
   private:
     char* i2s_read_buff = (char*) calloc(I2S_READ_LEN, sizeof(char));
 };

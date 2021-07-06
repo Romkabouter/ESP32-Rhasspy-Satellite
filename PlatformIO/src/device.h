@@ -22,7 +22,8 @@ enum DeviceMode {
 //The Matrix Voice has an jack and a speaker
 enum AmpOut {
   AMP_OUT_SPEAKERS = 0,
-  AMP_OUT_HEADPHONE = 1
+  AMP_OUT_HEADPHONE = 1,
+  AMP_OUT_BOTH = 2,
 };
 
 class Device {
@@ -52,6 +53,9 @@ class Device {
     virtual void setGain(uint16_t gain) {};
     //You can use this method to activated the hotword state (i.e. a hardware button)
     virtual bool isHotwordDetected() {return false;};
+
+    // how many different output configurations does this devices support (1 = single output channel, 2 = 2 output channels, i.e. speaker or headphone, 3 = speaker, headphone, speaker + headphone)
+    virtual int numAmpOutConfigurations() { return 2; };
     //
     //You can override these in your device
     int readSize = 256;
