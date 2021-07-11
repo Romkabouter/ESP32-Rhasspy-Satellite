@@ -93,6 +93,10 @@
    v7.6
     - Using ESP32 IDF FreeRTOS wrapper for the ringbuffer should fix audio playback
     - Support for ESP32 A1S 
+   v7.6.1
+    - Adding better logic for saving settings in webUI
+    - Add actual hardware capabilities in webUI
+    - Restructure AudioKit code
 
 * ************************************************************************ */
 
