@@ -78,6 +78,7 @@ input::-moz-focus-inner,input::-moz-focus-outer {border: 0;}
       <select name="amp_output">
         <option value="0" %AMP_OUT_SPEAKERS%>Speakers</option>
         <option value="1" %AMP_OUT_HEADPHONE%>Headphone</option>
+        <option value="2" %AMP_OUT_BOTH%>Headphone+Speakers</option>
       </select>
     </div>
     <div class="input-container">

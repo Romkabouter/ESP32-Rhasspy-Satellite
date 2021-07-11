@@ -382,14 +382,16 @@ void handle_playBytes(const std::string& topicstr, uint8_t *payload, size_t len,
     message_size = total;
     audioData.clear();
     XT_Wav_Class Message((const uint8_t *)payload);
-    Serial.printf("Samplerate: %d, Channels: %d, Format: %d, Bits per Sample: %d\r\n", (int)Message.SampleRate, (int)Message.NumChannels, (int)Message.Format, (int)Message.BitsPerSample);
-    sampleRate = (int)Message.SampleRate;
-    numChannels = (int)Message.NumChannels;
-    bitDepth = (int)Message.BitsPerSample;
-    queueDelay = ((int)Message.SampleRate * (int)Message.NumChannels * (int)Message.BitsPerSample) / 1000;
+    
+    sampleRate = Message.SampleRate;
+    numChannels = Message.NumChannels;
+    bitDepth = Message.BitsPerSample;
+    offset = Message.DataStart;
+
+    Serial.printf("Samplerate: %d, Channels: %d, Format: %d, Bits per Sample: %d, Start: %d\r\n", sampleRate, numChannels, (int)Message.Format, bitDepth, offset);
+    queueDelay = (sampleRate * numChannels * bitDepth) / 1000;
     //delay *= 2;
     //Serial.printf("Delay %d\n", (int)queueDelay);
-    offset = 44;
   }
 
   push_i2s_data((uint8_t *)&payload[offset], len - offset);
