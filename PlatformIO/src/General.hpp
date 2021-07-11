@@ -200,12 +200,12 @@ String processor(const String& var){
 
 void handleFSf ( AsyncWebServerRequest* request, const String& route ) {
     AsyncWebServerResponse *response ;
+    bool saveNeeded = false;
 
     if ( route.indexOf ( "index.html" ) >= 0 ) // Index page is in PROGMEM
     {
         if (request->method() == HTTP_POST) {
             int params = request->params();
-            bool saveNeeded = false;
             bool mi_found = false;
             bool mo_found = false;
             for(int i=0;i<params;i++){
@@ -322,12 +322,23 @@ void handleFSf ( AsyncWebServerRequest* request, const String& route ) {
                 Serial.println("No settings changed");
             }
         }
-        response = request->beginResponse_P ( 200, "text/html", index_html, processor ) ;
+        if (saveNeeded) {
+            response = request->beginResponse_P ( 200, "text/html", "<html><head><title>Rebooting...</title><script>setTimeout(function(){window.location.href = '/';},4000);</script></head><body><h1>Configuration saved, rebooting!</h1></body></html>");
+        } else {
+            response = request->beginResponse_P ( 200, "text/html", index_html, processor );
+        }
+
     } else {
         response = request->beginResponse_P ( 200, "text/html", "<html><body>unkown route</body></html>") ;
     }
 
     request->send ( response ) ;
+    
+    if (saveNeeded) {
+        Serial.println("Rebooting!");
+        ESP.restart();    
+    }
+
 }
 
 void handleRequest ( AsyncWebServerRequest* request )
@@ -409,6 +420,4 @@ void saveConfiguration(const char *filename, Config &config) {
         Serial.println(F("Failed to write to file"));
     }
     file.close();
-    Serial.println("Configuration saved! Rebooting");
-    ESP.restart();    
 }
