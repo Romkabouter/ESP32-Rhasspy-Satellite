@@ -168,17 +168,21 @@ void MatrixVoice::setWriteMode(int sampleRate, int bitDepth, int numChannels) {
 	MatrixVoice::bitDepth = bitDepth;
 	MatrixVoice::numChannels = numChannels;
 	FIFOFlush();
-	if (sampleRate != 16000) {
-		speex_resampler_set_rate(resampler,sampleRate,16000);
-		speex_resampler_skip_zeros(resampler);	
-	}
+	speex_resampler_set_rate(resampler,sampleRate,16000);
+	speex_resampler_skip_zeros(resampler);	
 	if (numChannels == 1) {
 		writeSize = 512;
 	} else {
 		writeSize = 1024;
 	}
+	if (sampleRate == 16000) {
+		writeSize = 1024;
+	}
 	if (sampleRate == 44100) {
-	//	writeSize = 1410;
+		writeSize = 2822;
+	}
+	if (sampleRate == 22050) {
+		writeSize = 1411;
 	}
 }; 
 
@@ -194,40 +198,53 @@ bool MatrixVoice::readAudio(uint8_t *data, size_t size) {
 
 void MatrixVoice::writeAudio(uint8_t *data, size_t size, size_t *bytes_written) {
 	*bytes_written = size;
-	float sample_time = 1.0 / sampleRate;
-	uint16_t fifo_status = GetFIFOStatus();
-
-  if (numChannels == 1) {
-		int16_t stereo[size];
-		int16_t mono[size / sizeof(int16_t)]; 
-		for (int i = 0; i < size; i += 2) {
-				mono[i/2] = ((data[i] & 0xff) | (data[i + 1] << 8));
-		}
-		interleave(mono, mono, stereo, size / sizeof(int16_t));
-		if (fifo_status > fifoSize * 3 / 4) {
-			int sleep = int(size * sizeof(int16_t) * sample_time * 1000);
-			std::this_thread::sleep_for(std::chrono::milliseconds(sleep));
-		}
-		wb.SpiWrite(matrix_hal::kDACBaseAddress, (const uint8_t *)stereo, size * sizeof(int16_t));
-	} else {
-		// uint32_t in_len;
-		// uint32_t out_len;
-		// in_len = size;
-		// out_len = 512;
-		// int16_t output[out_len];
-		// int16_t input[in_len];
-		// //Convert 8 bit to 16 bit
-		// for (int i = 0; i < size; i += 2) {
-		// 		input[i/2] = ((data[i] & 0xff) | (data[i + 1] << 8));
-		// }
-		// speex_resampler_process_interleaved_int(resampler, input, &in_len, output, &out_len); 
-
-		if (fifo_status > fifoSize * 3 / 4) {
-			int sleep = int(size * sample_time * 1000);
-			std::this_thread::sleep_for(std::chrono::milliseconds(sleep));
-		}
-		wb.SpiWrite(matrix_hal::kDACBaseAddress, (const uint8_t *)data, size);
+	float sample_time = 1.0 / 16000;
+	// std::valarray<uint16_t> output;
+	// output.resize(size / sizeof(int16_t));
+	uint32_t in_len = size / sizeof(int16_t);
+	uint32_t out_len;
+	int16_t input[in_len];
+	int16_t output[512];
+	int sleep = int(out_len * sizeof(int16_t) * sample_time * 1000);
+	for (int i = 0; i < size; i += 2) {
+			input[i/2] = ((data[i] & 0xff) | (data[i + 1] << 8));
 	}
+	//if (sampleRate != 16000) {
+		speex_resampler_process_interleaved_int(resampler, input, &in_len, output, &out_len); 
+	//}
+
+
+  // if (numChannels == 1) {
+	// 	// int16_t mono[size / sizeof(int16_t)]; 
+	// 	// for (int i = 0; i < size; i += 2) {
+	// 	// 		mono[i/2] = ((data[i] & 0xff) | (data[i + 1] << 8));
+	// 	// }
+	// 	// interleave(mono, mono, output, size / sizeof(int16_t));
+	// } else {
+	// 	// uint32_t in_len;
+	// 	// uint32_t out_len;
+	// 	// in_len = size;
+	// 	// out_len = 512;
+	// 	// int16_t output[out_len];
+	// 	// int16_t input[in_len];
+	// 	// //Convert 8 bit to 16 bit
+	// 	// for (int i = 0; i < size; i += 2) {
+	// 	// 		input[i/2] = ((data[i] & 0xff) | (data[i + 1] << 8));
+	// 	// }
+	// 	// speex_resampler_process_interleaved_int(resampler, input, &in_len, output, &out_len); 
+
+	// 	// if (fifo_status > fifoSize * 3 / 4) {
+	// 	// 	int sleep = int(size * sample_time * 1000);
+	// 	// 	std::this_thread::sleep_for(std::chrono::milliseconds(sleep));
+	// 	// }
+	// 	// wb.SpiWrite(matrix_hal::kDACBaseAddress, (const uint8_t *)data, size);
+	// }
+
+	uint16_t fifo_status = GetFIFOStatus();
+	if (fifo_status > fifoSize * 3 / 4) {
+		std::this_thread::sleep_for(std::chrono::milliseconds(sleep));
+	}
+	wb.SpiWrite(matrix_hal::kDACBaseAddress, (const uint8_t *)output, out_len * sizeof(int16_t));
 }
 
 // void MatrixVoice::writeAudio(uint8_t *data, size_t size, size_t *bytes_written) {
@@ -272,39 +289,6 @@ void MatrixVoice::interleave(const int16_t * in_L, const int16_t * in_R, int16_t
     }
 }
 
-void MatrixVoice::playBytes(int16_t* input, uint32_t length) {
-	//float sleep = 4000;
-	float sample_time = 1.0 / PCM_sampling_frequency;
-	int total = length * sizeof(int16_t);
-	int index = 0;
-	uint16_t fifo_status = GetFIFOStatus();
-
-	while ( total - (index * sizeof(int16_t)) > MatrixVoice::writeSize) {
-		uint16_t dataT[MatrixVoice::writeSize / sizeof(int16_t)];
-		for (int i = 0; i < (MatrixVoice::writeSize / sizeof(int16_t)); i++) {
-			dataT[i] = input[i+index];                               
-		}
-
-		if (fifo_status > fifoSize * 3 / 4) {
-			int sleep = int(length * sample_time * 1000);
-			std::this_thread::sleep_for(std::chrono::milliseconds(sleep));
-		}
-		wb.SpiWrite(matrix_hal::kDACBaseAddress, (const uint8_t *)dataT, MatrixVoice::writeSize);
-
-		index = index + (MatrixVoice::writeSize / sizeof(int16_t));
-	}
-	int rest = total - (index * sizeof(int16_t));
-	if (rest > 0) {
-		int size = rest / sizeof(int16_t);
-		uint16_t dataL[size];
-		for (int i = 0; i < size; i++) {
-			dataL[i] = input[i+index];                               
-		}
-		wb.SpiWrite(matrix_hal::kDACBaseAddress, (const uint8_t *)dataL, size * sizeof(uint16_t));
-		std::this_thread::sleep_for(std::chrono::microseconds((int)sleep) * (rest/MatrixVoice::writeSize));
-	}
-}
-
 bool MatrixVoice::FIFOFlush() {
   int16_t value = 1;
   wb.SpiWrite(matrix_hal::kConfBaseAddress + 12,(const uint8_t *)(&value), sizeof(uint16_t));	
@@ -324,30 +308,3 @@ uint16_t MatrixVoice::GetFIFOStatus() {
   else
     return fifoSize - read_pointer + write_pointer;
 }
-
-// bool MatrixVoice::GetPCMSamplingFrequency() {
-//   uint16_t PCM_constant;
-//   wb.SpiRead(matrix_hal::kConfBaseAddress + 9,(uint8_t *)(&PCM_constant), sizeof(uint16_t));	
-
-//   for (int i = 0;; i++) {
-//     if (PCM_constant == PCM_sampling_frequencies[i][1]) {
-//       PCM_sampling_frequency = PCM_sampling_frequencies[i][0];
-//       break;
-//     }
-//   }
-//   return true;
-// }
-
-// bool MatrixVoice::SetPCMSamplingFrequency(uint32_t PCM_sampling_frequency) {
-//   uint16_t PCM_constant;
-//   for (int i = 0;; i++) {
-//     if (PCM_sampling_frequencies[i][0] == 0) return false;
-//     if (PCM_sampling_frequency == PCM_sampling_frequencies[i][0]) {
-//       PCM_sampling_frequency = PCM_sampling_frequencies[i][0];
-//       PCM_constant = PCM_sampling_frequencies[i][1];
-//       break;
-//     }
-//   }
-//   wb.SpiWrite(matrix_hal::kConfBaseAddress + 9, (const uint8_t *)(&PCM_constant), sizeof(uint16_t));	
-//   return true;
-// }
