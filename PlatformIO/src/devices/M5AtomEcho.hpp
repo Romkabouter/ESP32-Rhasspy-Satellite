@@ -24,6 +24,8 @@ public:
   void writeAudio(uint8_t *data, size_t size, size_t *bytes_written);
   bool readAudio(uint8_t *data, size_t size);
   bool isHotwordDetected();
+  int numAmpOutConfigurations() { return 1; };
+
 private:
   void InitI2SSpeakerOrMic(int mode);
 };
