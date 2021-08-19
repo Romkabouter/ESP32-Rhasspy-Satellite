@@ -494,6 +494,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
           ota_colors[2] = root["update"][2];
           ota_colors[3] = root["update"][3];
         }
+        device->updateColors(COLORS_IDLE);
         if (saveNeeded) {
           saveConfiguration(configfile, config);
         }
