@@ -188,7 +188,7 @@ class WifiConnected : public StateMachine
     #if NETWORK_TYPE == NETWORK_ETHERNET
         Serial.printf("Connected to LAN with IP: %s, \n", ETH.localIP().toString().c_str());
     #else
-        Serial.printf("Connected to Wifi with IP: %s, SSID: %s, BSSID: %s, RSSI: %d\n", WiFi.localIP().toString().c_str(), WiFi.SSID().c_str(), WiFi.BSSIDstr().c_str(), WiFi.RSSI());
+        Serial.printf("Connected to Wifi with IP: %s, SSID: %s, BSSID: %s, RSSI: %d\r\n", WiFi.localIP().toString().c_str(), WiFi.SSID().c_str(), WiFi.BSSIDstr().c_str(), WiFi.RSSI());
     #endif
     xEventGroupClearBits(audioGroup, PLAY);
     xEventGroupClearBits(audioGroup, STREAM);
@@ -264,13 +264,13 @@ class WifiDisconnected : public StateMachine
         int n = WiFi.scanNetworks(); // WiFi.scanNetworks will return the number of networks found
         // or WIFI_SCAN_RUNNING   (-1), WIFI_SCAN_FAILED    (-2)
 
-        Serial.printf("WiFi scan done, result %d\n", n);
+        Serial.printf("WiFi scan done, result %d\r\n", n);
         if (n <= 0) {
           Serial.println("error or no networks found");
         } else {
           for (int i = 0; i < n; ++i) {
             // Print metrics for each network found
-            Serial.printf("%d: BSSID: %s  %ddBm, %d%% %s, %s (%d)\n", i + 1, WiFi.BSSIDstr(i).c_str(), WiFi.RSSI(i), constrain(2 * (WiFi.RSSI(i) + 100), 0, 100),
+            Serial.printf("%d: BSSID: %s  %ddBm, %d%% %s, %s (%d)\r\n", i + 1, WiFi.BSSIDstr(i).c_str(), WiFi.RSSI(i), constrain(2 * (WiFi.RSSI(i) + 100), 0, 100),
               (WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? "open     " : "encrypted", WiFi.SSID(i).c_str(), WiFi.channel(i));
           }
         }
@@ -286,7 +286,7 @@ class WifiDisconnected : public StateMachine
           Serial.println("No network with SSID " WIFI_SSID " found!");
           WiFi.begin(WIFI_SSID, WIFI_PASS); // try basic method anyway
         } else {
-          Serial.printf("SSID match found at index: %d\n", i + 1);
+          Serial.printf("SSID match found at index: %d\r\n", i + 1);
           WiFi.begin(WIFI_SSID, WIFI_PASS, 0, WiFi.BSSID(i)); // pass selected BSSID
         }
       #else
@@ -561,7 +561,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
     }
     else
     {
-      Serial.printf("Unhandled partial message received, topic '%s'", topic);
+      Serial.printf("Unhandled partial message received, topic '%s'\r\n", topic);
     }
   }
 }
@@ -589,7 +589,7 @@ void I2Stask(void *p) {
           {
             if (!audioData.pop(data[i]))
             {
-              Serial.printf("Buffer underflow %d %ld\n", played + i, message_size);
+              Serial.printf("Buffer underflow %d %ld\r\n", played + i, message_size);
               vTaskDelay(60);
               bytes_to_write = (i)*2;
             }
