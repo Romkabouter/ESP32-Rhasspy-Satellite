@@ -458,6 +458,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
         if (root.containsKey("brightness")) {
           if (config.brightness != (int)root["brightness"]) {
             config.brightness = (int)(root["brightness"]);
+            device->updateBrightness(config.brightness);
             saveNeeded = true;
           }
         }
