@@ -13,12 +13,26 @@ public:
   virtual void react(MQTTDisconnectedEvent const &) {};
   virtual void react(StreamAudioEvent const &) {};
   virtual void react(IdleEvent const &) {};
+  virtual void react(OtaEvent const &) {};
   virtual void react(PlayAudioEvent const &) {};
   virtual void react(HotwordDetectedEvent const &) {};
 
   virtual void entry(void) {}; 
   virtual void run(void) {}; 
   void         exit(void) {};
+};
+
+class Updating : public StateMachine
+{
+  void entry(void) override {
+    xEventGroupClearBits(audioGroup, PLAY);
+    xEventGroupClearBits(audioGroup, STREAM);
+    device->updateBrightness(config.brightness);
+    if (xSemaphoreTake(wbSemaphore, (TickType_t)10000) == pdTRUE) {
+      device->updateColors(COLORS_OTA);
+      xSemaphoreGive(wbSemaphore);
+    }
+  }
 };
 
 class HotwordDetected : public StateMachine
@@ -104,6 +118,13 @@ class Idle : public StateMachine
     xEventGroupSetBits(audioGroup, PLAY);
   };
 
+  void react(IdleEvent const &) override { 
+    transit<Idle>();
+  }
+
+  void react(OtaEvent const &) override { 
+    transit<Updating>();
+  }
 };
 
 class MQTTConnected : public StateMachine {
@@ -458,7 +479,6 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
         if (root.containsKey("brightness")) {
           if (config.brightness != (int)root["brightness"]) {
             config.brightness = (int)(root["brightness"]);
-            device->updateBrightness(config.brightness);
             saveNeeded = true;
           }
         }
@@ -495,10 +515,10 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
           ota_colors[2] = root["update"][2];
           ota_colors[3] = root["update"][3];
         }
-        device->updateColors(COLORS_IDLE);
         if (saveNeeded) {
           saveConfiguration(configfile, config);
         }
+        send_event(IdleEvent());
       } else {
         publishDebug(err.c_str());
       }
