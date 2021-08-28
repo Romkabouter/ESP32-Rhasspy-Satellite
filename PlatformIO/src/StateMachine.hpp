@@ -13,12 +13,34 @@ public:
   virtual void react(MQTTDisconnectedEvent const &) {};
   virtual void react(StreamAudioEvent const &) {};
   virtual void react(IdleEvent const &) {};
+  virtual void react(SpeakEvent const &) {};  
   virtual void react(PlayAudioEvent const &) {};
   virtual void react(HotwordDetectedEvent const &) {};
 
   virtual void entry(void) {}; 
   virtual void run(void) {}; 
   void         exit(void) {};
+};
+
+class Speaking : public StateMachine
+{
+  void react(IdleEvent const &) override { 
+    transit<Idle>();
+  }
+
+  void react(HotwordDetectedEvent const &) override { 
+    transit<HotwordDetected>();
+  }
+
+  void react(StreamAudioEvent const &) override { 
+    xEventGroupClearBits(audioGroup, PLAY);
+    xEventGroupSetBits(audioGroup, STREAM);
+  };
+
+  void react(PlayAudioEvent const &) override { 
+    xEventGroupClearBits(audioGroup, STREAM);
+    xEventGroupSetBits(audioGroup, PLAY);
+  };
 };
 
 class HotwordDetected : public StateMachine
@@ -28,10 +50,9 @@ class HotwordDetected : public StateMachine
     xEventGroupClearBits(audioGroup, PLAY);
     xEventGroupClearBits(audioGroup, STREAM);
     device->updateBrightness(config.hotword_brightness);
-    if (xSemaphoreTake(wbSemaphore, (TickType_t)10000) == pdTRUE) {
-      device->updateColors(COLORS_HOTWORD);
-      xSemaphoreGive(wbSemaphore);
-    }
+    xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
+    device->updateColors(COLORS_HOTWORD);
+    xSemaphoreGive(wbSemaphore);
     initHeader(device->readSize, device->width, device->rate);
     xEventGroupSetBits(audioGroup, STREAM);
   }
@@ -50,6 +71,10 @@ class HotwordDetected : public StateMachine
     transit<Idle>();
   }
 
+  void react(SpeakEvent const &) override { 
+    transit<Speaking>();
+  }
+
   void react(WifiDisconnectEvent const &) override { 
     transit<WifiDisconnected>();
   };
@@ -65,10 +90,9 @@ class Idle : public StateMachine
     xEventGroupClearBits(audioGroup, PLAY);
     xEventGroupClearBits(audioGroup, STREAM);
     device->updateBrightness(config.brightness);
-    if (xSemaphoreTake(wbSemaphore, (TickType_t)10000) == pdTRUE) {
-      device->updateColors(COLORS_IDLE);
-      xSemaphoreGive(wbSemaphore);
-    }
+    xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
+    device->updateColors(COLORS_IDLE);
+    xSemaphoreGive(wbSemaphore);
     initHeader(device->readSize, device->width, device->rate);
     xEventGroupSetBits(audioGroup, STREAM);
   }
@@ -104,6 +128,9 @@ class Idle : public StateMachine
     xEventGroupSetBits(audioGroup, PLAY);
   };
 
+  void react(SpeakEvent const &) override { 
+    transit<Speaking>();
+  }
 };
 
 class MQTTConnected : public StateMachine {
@@ -425,10 +452,13 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
       // Check if this is for us
       if (!err) {
         JsonObject root = doc.as<JsonObject>();
-        if (root["siteId"] == config.siteid.c_str()
-          && root.containsKey("reason")
-          && root["reason"] == "dialogueSession") {
-            send_event(HotwordDetectedEvent());
+        if (root["siteId"] == config.siteid.c_str() && root.containsKey("reason")) {
+          if (root["reason"] == "dialogueSession") {
+              send_event(HotwordDetectedEvent());
+          }
+          if (root["reason"] == "ttsSay") {
+              send_event(SpeakEvent());
+          }
         }
       }
     } else if (topicstr.find("toggleOn") != std::string::npos) {
@@ -438,10 +468,10 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
       // Check if this is for us
       if (!err) {
         JsonObject root = doc.as<JsonObject>();
-        if (root["siteId"] == config.siteid.c_str() 
-          && root.containsKey("reason")
-          && root["reason"] == "dialogueSession") {
-          send_event(IdleEvent());
+        if (root["siteId"] == config.siteid.c_str() && root.containsKey("reason")) {
+          if (root["reason"] == "dialogueSession" || root["reason"] == "ttsSay") {
+              send_event(IdleEvent());
+          }
         }
       }
     }
@@ -568,15 +598,22 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
 
 void I2Stask(void *p) {  
   while (1) {    
-    if (xEventGroupGetBits(audioGroup) == PLAY && xSemaphoreTake(wbSemaphore, (TickType_t)5000) == pdTRUE) {
+    if (xEventGroupGetBits(audioGroup) == PLAY) {
       size_t bytes_written;
       boolean timeout = false;
       int played = 44;
 
+      xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
       device->setWriteMode(sampleRate, bitDepth, numChannels);
+      xSemaphoreGive(wbSemaphore); 
 
       while (played < message_size && timeout == false)
       {
+        if (fsm::is_in_state<Speaking>()) {
+          xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
+          device->animate(COLORS_OTA);
+          xSemaphoreGive(wbSemaphore); 
+        }
         int bytes_to_write = device->writeSize;
         if (message_size - played < device->writeSize)
         {
@@ -597,9 +634,10 @@ void I2Stask(void *p) {
           played = played + bytes_to_write;
           if (!config.mute_output)
           {
+            xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
             device->muteOutput(false);
             device->writeAudio((uint8_t*)data, bytes_to_write, &bytes_written);
-
+            xSemaphoreGive(wbSemaphore);
           }
           else
           {
@@ -611,16 +649,30 @@ void I2Stask(void *p) {
         }
       }
       asyncClient.publish(playFinishedTopic.c_str(), 0, false, finishedMsg.c_str());
+      xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
       device->muteOutput(true);
+      xSemaphoreGive(wbSemaphore); 
       audioData.clear();
       Serial.println("Done");
-      xSemaphoreGive(wbSemaphore); 
+      // if (fsm::is_in_state<Idle>() || fsm::is_in_state<Speaking>()) {
+      //   xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
+      //   device->updateColors(COLORS_IDLE);
+      //   xSemaphoreGive(wbSemaphore); 
+      // }
+      // if (fsm::is_in_state<HotwordDetected>()) {
+      //   xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
+      //   device->updateColors(COLORS_HOTWORD);
+      //   xSemaphoreGive(wbSemaphore); 
+      // }
       send_event(StreamAudioEvent());
     }
-    if (xEventGroupGetBits(audioGroup) == STREAM && !config.mute_input && xSemaphoreTake(wbSemaphore, (TickType_t)5000) == pdTRUE) {     
+    if (xEventGroupGetBits(audioGroup) == STREAM && !config.mute_input) {     
+      xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
       device->setReadMode();
+      xSemaphoreGive(wbSemaphore); 
       uint8_t data[device->readSize * device->width];
       if (audioServer.connected()) {
+        xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
         if (device->readAudio(data, device->readSize * device->width)) {
           // only send audio if hotword_detection is HW_REMOTE.
           //TODO when LOCAL is supported: check if hotword is detected and send audio as well in that case
@@ -642,11 +694,11 @@ void I2Stask(void *p) {
           //Loop, because otherwise this causes timeouts
           audioServer.loop();
         }
+        xSemaphoreGive(wbSemaphore); 
       } else {
         xEventGroupClearBits(audioGroup, STREAM);
         send_event(MQTTDisconnectedEvent());
       }
-      xSemaphoreGive(wbSemaphore); 
     }
 
     //Added for stability when neither PLAY or STREAM is set.

@@ -44,6 +44,7 @@ class MatrixVoice : public Device
 public:
   MatrixVoice();
   void init();
+	void animate(int colors);
 	void updateColors(int colors);
 	void updateBrightness(int brightness);
   void muteOutput(bool mute);
@@ -74,7 +75,8 @@ private:
 	uint32_t spiLength = 1024;
   int sleep = int(spiLength * sample_time * 1000);
 	int count = 0;
-
+	int position = 0;
+	long currentMillis, startMillis;
 };
 
 MatrixVoice::MatrixVoice()
@@ -92,12 +94,38 @@ void MatrixVoice::init()
   matrix_hal::MicrophoneCore mic_core(*mics);
   mic_core.Setup(&wb);  
   uint16_t PCM_constant = 492;
-  wb.SpiWrite(matrix_hal::kConfBaseAddress + 9, (const uint8_t *)(&PCM_constant), sizeof(uint16_t));		
+  wb.SpiWrite(matrix_hal::kConfBaseAddress + 9, (const uint8_t *)(&PCM_constant), sizeof(uint16_t));
+	currentMillis = millis();
+	startMillis = millis();
 };
 
 void MatrixVoice::updateBrightness(int brightness) {
 	// all values below 10 is read as 0 in gamma8, we map 0 to 10
 	MatrixVoice::brightness = brightness * 90 / 100 + 10;
+}
+
+void MatrixVoice::animate(int colors) {
+	currentMillis = millis();
+	if (currentMillis - startMillis > 10) {
+		startMillis = millis();
+		int r = 0;
+		int g = 0;
+		int b = 0;
+		int w = 0;	
+		for (int i = 0; i < image1d.leds.size(); i++) {
+			r = ((i + 1) * brightness / image1d.leds.size()) * ota_colors[0] / 100;
+			g = ((i + 1) * brightness / image1d.leds.size()) * ota_colors[1] / 100;
+			b = ((i + 1) * brightness / image1d.leds.size()) * ota_colors[2] / 100;
+			w = ((i + 1) * brightness / image1d.leds.size()) * ota_colors[3] / 100;
+			image1d.leds[(i + position) % image1d.leds.size()].red = pgm_read_byte(&gamma8[r]);
+			image1d.leds[(i + position) % image1d.leds.size()].green = pgm_read_byte(&gamma8[g]);
+			image1d.leds[(i + position) % image1d.leds.size()].blue = pgm_read_byte(&gamma8[b]);
+			image1d.leds[(i + position) % image1d.leds.size()].white = pgm_read_byte(&gamma8[w]);
+		}
+		position++;
+		position %= image1d.leds.size();
+		everloop.Write(&image1d);
+	}
 }
 
 void MatrixVoice::updateColors(int colors) {

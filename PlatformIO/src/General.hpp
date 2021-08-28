@@ -94,6 +94,7 @@ struct WifiDisconnected;
 struct MQTTDisconnected;
 struct HotwordDetected;
 struct Idle;
+struct Speaking;
 struct PlayAudio;
 
 struct WifiDisconnectEvent : tinyfsm::Event { };
@@ -101,6 +102,7 @@ struct WifiConnectEvent : tinyfsm::Event { };
 struct MQTTDisconnectedEvent : tinyfsm::Event { };
 struct MQTTConnectedEvent : tinyfsm::Event { };
 struct IdleEvent : tinyfsm::Event { };
+struct SpeakEvent : tinyfsm::Event { };
 struct StreamAudioEvent : tinyfsm::Event { };
 struct PlayAudioEvent : tinyfsm::Event {};
 struct HotwordDetectedEvent : tinyfsm::Event { };
