@@ -654,16 +654,6 @@ void I2Stask(void *p) {
       xSemaphoreGive(wbSemaphore); 
       audioData.clear();
       Serial.println("Done");
-      // if (fsm::is_in_state<Idle>() || fsm::is_in_state<Speaking>()) {
-      //   xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
-      //   device->updateColors(COLORS_IDLE);
-      //   xSemaphoreGive(wbSemaphore); 
-      // }
-      // if (fsm::is_in_state<HotwordDetected>()) {
-      //   xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
-      //   device->updateColors(COLORS_HOTWORD);
-      //   xSemaphoreGive(wbSemaphore); 
-      // }
       send_event(StreamAudioEvent());
     }
     if (xEventGroupGetBits(audioGroup) == STREAM && !config.mute_input) {     

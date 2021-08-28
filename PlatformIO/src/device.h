@@ -35,6 +35,8 @@ class Device {
     virtual void init() {};
      //If your device has leds, override these methods to set the colors and brightness
     virtual void updateColors(int colors) {};
+    //You can create some animation here
+    virtual void animate(int colors) {};
     virtual void updateBrightness(int brightness) {};
     //It may be needed to switch between read and write, i.e. if the need the same PIN
     //Override both methods
