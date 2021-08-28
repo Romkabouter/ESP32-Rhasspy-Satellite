@@ -14,6 +14,7 @@ public:
   virtual void react(StreamAudioEvent const &) {};
   virtual void react(IdleEvent const &) {};
   virtual void react(SpeakEvent const &) {};  
+  virtual void react(OtaEvent const &) {};
   virtual void react(PlayAudioEvent const &) {};
   virtual void react(HotwordDetectedEvent const &) {};
 
@@ -41,6 +42,18 @@ class Speaking : public StateMachine
     xEventGroupClearBits(audioGroup, STREAM);
     xEventGroupSetBits(audioGroup, PLAY);
   };
+};
+
+class Updating : public StateMachine
+{
+  void entry(void) override {
+    xEventGroupClearBits(audioGroup, PLAY);
+    xEventGroupClearBits(audioGroup, STREAM);
+    device->updateBrightness(config.brightness);
+    xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
+    device->updateColors(COLORS_OTA);
+    xSemaphoreGive(wbSemaphore);
+  }
 };
 
 class HotwordDetected : public StateMachine
@@ -130,6 +143,14 @@ class Idle : public StateMachine
 
   void react(SpeakEvent const &) override { 
     transit<Speaking>();
+  }
+  
+  void react(IdleEvent const &) override { 
+    transit<Idle>();
+  }
+
+  void react(OtaEvent const &) override { 
+    transit<Updating>();
   }
 };
 
@@ -527,6 +548,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
         if (saveNeeded) {
           saveConfiguration(configfile, config);
         }
+        send_event(IdleEvent());
       } else {
         publishDebug(err.c_str());
       }

@@ -101,6 +101,7 @@ void MatrixVoice::init()
 
 void MatrixVoice::updateBrightness(int brightness) {
 	// all values below 10 is read as 0 in gamma8, we map 0 to 10
+	if (brightness > 100) { brightness = 100; }
 	MatrixVoice::brightness = brightness * 90 / 100 + 10;
 }
 
