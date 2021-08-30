@@ -77,6 +77,8 @@ std::string audioTopic = config.siteid + std::string("/audio");
 std::string ledTopic = config.siteid + std::string("/led");
 std::string debugTopic = config.siteid + std::string("/debug");
 std::string restartTopic = config.siteid + std::string("/restart");
+std::string sayTopic = "hermes/tts/say";
+std::string sayFinishedTopic = "hermes/tts/sayFinished";
 AsyncMqttClient asyncClient; 
 WiFiClient net;
 PubSubClient audioServer(net); 
