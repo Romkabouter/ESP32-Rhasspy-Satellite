@@ -165,6 +165,8 @@ class MQTTConnected : public StateMachine {
     asyncClient.subscribe(debugTopic.c_str(), 0);
     asyncClient.subscribe(ledTopic.c_str(), 0);
     asyncClient.subscribe(restartTopic.c_str(), 0);
+    asyncClient.subscribe(sayTopic.c_str(), 0);
+    asyncClient.subscribe(sayFinishedTopic.c_str(), 0);
     transit<Idle>();
   }
 
@@ -465,7 +467,31 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
   // complete or enf of message has been received
   if (len + index == total)
   {
-    if (topicstr.find("toggleOff") != std::string::npos)
+    if (topicstr.find(sayFinishedTopic.c_str()) != std::string::npos)
+    {
+      std::string payloadstr(payload);
+      StaticJsonDocument<300> doc;
+      DeserializationError err = deserializeJson(doc, payloadstr.c_str());
+      // Check if this is for us
+      if (!err) {
+        JsonObject root = doc.as<JsonObject>();
+        if (root["siteId"] == config.siteid.c_str()) {
+          send_event(IdleEvent());
+        }
+      }
+    } else if (topicstr.find(sayTopic.c_str()) != std::string::npos)
+    {
+      std::string payloadstr(payload);
+      StaticJsonDocument<300> doc;
+      DeserializationError err = deserializeJson(doc, payloadstr.c_str());
+      // Check if this is for us
+      if (!err) {
+        JsonObject root = doc.as<JsonObject>();
+        if (root["siteId"] == config.siteid.c_str()) {
+          send_event(SpeakEvent());
+        }
+      }
+    } else if (topicstr.find("toggleOff") != std::string::npos)
     {
       std::string payloadstr(payload);
       StaticJsonDocument<300> doc;
