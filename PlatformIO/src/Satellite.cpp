@@ -183,7 +183,7 @@ void setup() {
   ArduinoOTA
     .onStart([]() {
       Serial.println("Uploading...");
-      send_event(OtaEvent());
+      send_event(UpdateEvent());
     })
     .onEnd([]() {
       Serial.println("\nEnd");

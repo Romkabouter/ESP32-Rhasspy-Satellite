@@ -7,41 +7,71 @@ class StateMachine
 : public tinyfsm::Fsm<StateMachine>
 {
 public:
-  virtual void react(WifiDisconnectEvent const &) {};
-  virtual void react(WifiConnectEvent const &) {};
-  virtual void react(MQTTConnectedEvent const &) {};
-  virtual void react(MQTTDisconnectedEvent const &) {};
-  virtual void react(StreamAudioEvent const &) {};
+  virtual void react(WifiDisconnectEvent const &) {
+    transit<WifiDisconnected>();
+  };
+  virtual void react(WifiConnectEvent const &) {
+    transit<WifiConnected>();
+  };
+  virtual void react(MQTTConnectedEvent const &) {
+    transit<MQTTConnected>();    
+  };
+  virtual void react(MQTTDisconnectedEvent const &) {
+    transit<MQTTDisconnected>();    
+  };
+  virtual void react(BeginPlayAudioEvent const &) {};
+  virtual void react(EndPlayAudioEvent const &) {};
+  virtual void react(StreamAudioEvent const &) {
+    xEventGroupClearBits(audioGroup, PLAY);
+    xEventGroupSetBits(audioGroup, STREAM);
+  };
   virtual void react(IdleEvent const &) {};
-  virtual void react(SpeakEvent const &) {};  
-  virtual void react(OtaEvent const &) {};
-  virtual void react(PlayAudioEvent const &) {};
-  virtual void react(HotwordDetectedEvent const &) {};
+  virtual void react(ErrorEvent const &) {};
+  virtual void react(TtsEvent const &) {};  
+  virtual void react(UpdateEvent const &) {};
+  virtual void react(PlayBytesEvent const &) {
+    xEventGroupClearBits(audioGroup, STREAM);
+    xEventGroupSetBits(audioGroup, PLAY);
+  };
+  virtual void react(ListeningEvent const &) {};
 
   virtual void entry(void) {}; 
   virtual void run(void) {}; 
   void         exit(void) {};
 };
 
-class Speaking : public StateMachine
+class Tts : public StateMachine
 {
+  void entry(void) override {
+    publishDebug("Enter Tts");
+  }
+
   void react(IdleEvent const &) override { 
+    publishDebug("IdleEvent in Tts");
     transit<Idle>();
   }
 
-  void react(HotwordDetectedEvent const &) override { 
-    transit<HotwordDetected>();
+  void react(ListeningEvent const &) override { 
+    publishDebug("ListeningEvent in Tts");
+    transit<Listening>();
   }
 
-  void react(StreamAudioEvent const &) override { 
-    xEventGroupClearBits(audioGroup, PLAY);
-    xEventGroupSetBits(audioGroup, STREAM);
-  };
+  void react(BeginPlayAudioEvent const &) override { 
+    publishDebug("BeginPlayAudioEvent in Tts");
+    transit<TtsPlay>();
+  }
+};
 
-  void react(PlayAudioEvent const &) override { 
-    xEventGroupClearBits(audioGroup, STREAM);
-    xEventGroupSetBits(audioGroup, PLAY);
-  };
+class TtsPlay : public StateMachine
+{
+  void entry(void) override {
+    publishDebug("Enter TtsPlay");
+  }
+
+  void react(EndPlayAudioEvent const &) override { 
+    publishDebug("EndPlayAudioEvent in TtsPlay");
+    transit<Tts>();
+  }
 };
 
 class Updating : public StateMachine
@@ -56,10 +86,10 @@ class Updating : public StateMachine
   }
 };
 
-class HotwordDetected : public StateMachine
+class Listening : public StateMachine
 {
   void entry(void) override {
-    Serial.println("Enter HotwordDetected");
+    publishDebug("Enter Listening");
     xEventGroupClearBits(audioGroup, PLAY);
     xEventGroupClearBits(audioGroup, STREAM);
     device->updateBrightness(config.hotword_brightness);
@@ -70,27 +100,31 @@ class HotwordDetected : public StateMachine
     xEventGroupSetBits(audioGroup, STREAM);
   }
 
-  void react(StreamAudioEvent const &) override { 
-    xEventGroupClearBits(audioGroup, PLAY);
-    xEventGroupSetBits(audioGroup, STREAM);
-  };
-
-  void react(PlayAudioEvent const &) override { 
-    xEventGroupClearBits(audioGroup, STREAM);
-    xEventGroupSetBits(audioGroup, PLAY);
-  };
-
   void react(IdleEvent const &) override { 
+    publishDebug("IdleEvent in Listening");
     transit<Idle>();
   }
 
-  void react(SpeakEvent const &) override { 
-    transit<Speaking>();
+  void react(TtsEvent const &) override { 
+    transit<Tts>();
   }
 
-  void react(WifiDisconnectEvent const &) override { 
-    transit<WifiDisconnected>();
-  };
+  void react(BeginPlayAudioEvent const &) override { 
+    publishDebug("BeginPlayAudioEvent in Listening");
+    transit<ListeningPlay>();
+  }
+};
+
+class ListeningPlay : public StateMachine
+{
+  void entry(void) override {
+    publishDebug("Enter ListeningPlay");
+  }
+
+  void react(EndPlayAudioEvent const &) override { 
+    publishDebug("EndPlayAudioEvent in ListeningPlay");
+    transit<Listening>();
+  }
 };
 
 class Idle : public StateMachine
@@ -98,7 +132,7 @@ class Idle : public StateMachine
   bool hotwordDetected = false;
 
   void entry(void) override {
-    Serial.println("Enter Idle");
+    publishDebug("Enter Idle");
     hotwordDetected = false;
     xEventGroupClearBits(audioGroup, PLAY);
     xEventGroupClearBits(audioGroup, STREAM);
@@ -119,38 +153,70 @@ class Idle : public StateMachine
     }
   }
 
-  void react(WifiDisconnectEvent const &) override { 
-    transit<WifiDisconnected>();
+  void react(ListeningEvent const &) override { 
+    transit<Listening>();
   }
 
-  void react(MQTTDisconnectedEvent const &) override { 
-    transit<MQTTDisconnected>();
+  void react(BeginPlayAudioEvent const &) override { 
+    publishDebug("BeginPlayAudioEvent in Idle");
+    transit<IdlePlay>();
   }
 
-  void react(HotwordDetectedEvent const &) override { 
-    transit<HotwordDetected>();
+  void react(TtsEvent const &) override { 
+    transit<Tts>();
   }
 
-  void react(StreamAudioEvent const &) override { 
-    xEventGroupClearBits(audioGroup, PLAY);
-    xEventGroupSetBits(audioGroup, STREAM);
-  };
-
-  void react(PlayAudioEvent const &) override { 
-    xEventGroupClearBits(audioGroup, STREAM);
-    xEventGroupSetBits(audioGroup, PLAY);
-  };
-
-  void react(SpeakEvent const &) override { 
-    transit<Speaking>();
+  void react(ErrorEvent const &) override { 
+    transit<Error>();
   }
   
+  void react(UpdateEvent const &) override { 
+    transit<Updating>();
+  }
+};
+
+class IdlePlay : public StateMachine
+{
+  void entry(void) override {
+    publishDebug("Enter IdlePlay");
+  }
+
+  void react(EndPlayAudioEvent const &) override { 
+    publishDebug("EndPlayAudioEvent in IdlePlay");
+    transit<Idle>();
+  }
+};
+
+class Error : public StateMachine
+{
+  void entry(void) override {
+    publishDebug("Enter Error");
+    device->updateBrightness(config.brightness);
+    xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
+    device->updateColors(COLORS_OTA);
+    xSemaphoreGive(wbSemaphore);
+  }
+
   void react(IdleEvent const &) override { 
+    publishDebug("IdleEvent in Error");
     transit<Idle>();
   }
 
-  void react(OtaEvent const &) override { 
-    transit<Updating>();
+  void react(BeginPlayAudioEvent const &) override { 
+    publishDebug("BeginPlayAudioEvent in Error");
+    transit<ErrorPlay>();
+  }
+};
+
+class ErrorPlay : public StateMachine
+{
+  void entry(void) override {
+    publishDebug("Enter ErrorPlay");
+  }
+
+  void react(EndPlayAudioEvent const &) override { 
+    publishDebug("EndPlayAudioEvent in ErrorPlay");
+    transit<Error>();
   }
 };
 
@@ -162,20 +228,13 @@ class MQTTConnected : public StateMachine {
     asyncClient.subscribe(playBytesTopic.c_str(), 0);
     asyncClient.subscribe(hotwordTopic.c_str(), 0);
     asyncClient.subscribe(audioTopic.c_str(), 0);
-    asyncClient.subscribe(debugTopic.c_str(), 0);
+    //asyncClient.subscribe(debugTopic.c_str(), 0);
     asyncClient.subscribe(ledTopic.c_str(), 0);
     asyncClient.subscribe(restartTopic.c_str(), 0);
     asyncClient.subscribe(sayTopic.c_str(), 0);
     asyncClient.subscribe(sayFinishedTopic.c_str(), 0);
+    asyncClient.subscribe(errorTopic.c_str(), 0);
     transit<Idle>();
-  }
-
-  void react(MQTTDisconnectedEvent const &) override { 
-    transit<MQTTDisconnected>();
-  }
-
-  void react(WifiDisconnectEvent const &) override { 
-    transit<WifiDisconnected>();
   }
 };
 
@@ -221,14 +280,6 @@ class MQTTDisconnected : public StateMachine {
       }      
     }
   }
-
-  void react(MQTTConnectedEvent const &) override { 
-    transit<MQTTConnected>();
-  }
-
-  void react(WifiDisconnectEvent const &) override { 
-    transit<WifiDisconnected>();
-  }
 };
 
 class WifiConnected : public StateMachine
@@ -247,11 +298,6 @@ class WifiConnected : public StateMachine
     ArduinoOTA.begin();
     transit<MQTTDisconnected>();
   }
-
-  void react(WifiDisconnectEvent const &) override { 
-    Serial.println("DisconnectEvent");
-    transit<WifiDisconnected>();
-  };
 };
 
 class WifiDisconnected : public StateMachine
@@ -355,10 +401,6 @@ class WifiDisconnected : public StateMachine
     #endif
 
   }
-
-  void react(WifiConnectEvent const &) override { 
-    transit<WifiConnected>();
-  };
 };
 
 FSM_INITIAL_STATE(StateMachine, WifiDisconnected)
@@ -414,7 +456,7 @@ void push_i2s_data(const uint8_t *const payload, size_t len)
     {
       if (xEventGroupGetBits(audioGroup) != PLAY)
       {
-        send_event(PlayAudioEvent());
+        send_event(PlayBytesEvent());
       }
       vTaskDelay(pdMS_TO_TICKS(50));
     } while (audioData.isFull());
@@ -429,6 +471,7 @@ void handle_playBytes(const std::string& topicstr, uint8_t *payload, size_t len,
   // start of message
   if (index == 0)
   {
+    send_event(BeginPlayAudioEvent());
     message_size = total;
     audioData.clear();
     XT_Wav_Class Message((const uint8_t *)payload);
@@ -452,11 +495,12 @@ void handle_playBytes(const std::string& topicstr, uint8_t *payload, size_t len,
     //At the end, make sure to start play in case the buffer is not full yet
     if (!audioData.isEmpty() && xEventGroupGetBits(audioGroup) != PLAY)
     {
-      send_event(PlayAudioEvent());
+      send_event(PlayBytesEvent());
     }
 
     std::vector<std::string> topicparts = explode("/", topicstr);
     finishedMsg = "{\"id\":\"" + topicparts[4] + "\",\"siteId\":\"" + config.siteid + "\",\"sessionId\":null}";
+    send_event(EndPlayAudioEvent());
   }
 }
 
@@ -467,7 +511,19 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
   // complete or enf of message has been received
   if (len + index == total)
   {
-    if (topicstr.find(sayFinishedTopic.c_str()) != std::string::npos)
+    if (topicstr.find(errorTopic.c_str()) != std::string::npos)
+    {
+      std::string payloadstr(payload);
+      StaticJsonDocument<300> doc;
+      DeserializationError err = deserializeJson(doc, payloadstr.c_str());
+      // Check if this is for us
+      if (!err) {
+        JsonObject root = doc.as<JsonObject>();
+        if (root["siteId"] == config.siteid.c_str()) {
+          send_event(ErrorEvent());
+        }
+      }
+    } else if (topicstr.find(sayFinishedTopic.c_str()) != std::string::npos)
     {
       std::string payloadstr(payload);
       StaticJsonDocument<300> doc;
@@ -488,7 +544,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
       if (!err) {
         JsonObject root = doc.as<JsonObject>();
         if (root["siteId"] == config.siteid.c_str()) {
-          send_event(SpeakEvent());
+          send_event(TtsEvent());
         }
       }
     } else if (topicstr.find("toggleOff") != std::string::npos)
@@ -501,10 +557,10 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
         JsonObject root = doc.as<JsonObject>();
         if (root["siteId"] == config.siteid.c_str() && root.containsKey("reason")) {
           if (root["reason"] == "dialogueSession") {
-              send_event(HotwordDetectedEvent());
+              send_event(ListeningEvent());
           }
           if (root["reason"] == "ttsSay") {
-              send_event(SpeakEvent());
+              send_event(TtsEvent());
           }
         }
       }
@@ -657,7 +713,7 @@ void I2Stask(void *p) {
 
       while (played < message_size && timeout == false)
       {
-        if (fsm::is_in_state<Speaking>()) {
+        if (fsm::is_in_state<Tts>()) {
           xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
           device->animate(COLORS_OTA);
           xSemaphoreGive(wbSemaphore); 

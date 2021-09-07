@@ -67,7 +67,7 @@ bool mqttInitialized = false;
 int retryCount = 0;
 int I2SMode = -1;
 bool mqttConnected = false;
-bool DEBUG = false;
+bool DEBUG = true;
 
 std::string audioFrameTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/audioFrame");
 std::string playBytesTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/playBytes/#");
@@ -79,6 +79,7 @@ std::string debugTopic = config.siteid + std::string("/debug");
 std::string restartTopic = config.siteid + std::string("/restart");
 std::string sayTopic = "hermes/tts/say";
 std::string sayFinishedTopic = "hermes/tts/sayFinished";
+std::string errorTopic = "hermes/nlu/intentNotRecognized";
 AsyncMqttClient asyncClient; 
 WiFiClient net;
 PubSubClient audioServer(net); 
@@ -92,24 +93,33 @@ static EventGroupHandle_t audioGroup;
 SemaphoreHandle_t wbSemaphore;
 TaskHandle_t i2sHandle;
 
+struct WifiConnected;
 struct WifiDisconnected;
+struct MQTTConnected;
 struct MQTTDisconnected;
-struct HotwordDetected;
+struct Listening;
+struct ListeningPlay;
 struct Idle;
-struct Speaking;
+struct IdlePlay;
+struct Tts;
+struct TtsPlay;
+struct Error;
+struct ErrorPlay;
 struct Updating;
-struct PlayAudio;
 
 struct WifiDisconnectEvent : tinyfsm::Event { };
 struct WifiConnectEvent : tinyfsm::Event { };
 struct MQTTDisconnectedEvent : tinyfsm::Event { };
 struct MQTTConnectedEvent : tinyfsm::Event { };
 struct IdleEvent : tinyfsm::Event { };
-struct SpeakEvent : tinyfsm::Event { };
-struct OtaEvent : tinyfsm::Event { };
+struct TtsEvent : tinyfsm::Event { };
+struct ErrorEvent : tinyfsm::Event { };
+struct UpdateEvent : tinyfsm::Event { };
+struct BeginPlayAudioEvent : tinyfsm::Event {};
+struct EndPlayAudioEvent : tinyfsm::Event {};
 struct StreamAudioEvent : tinyfsm::Event { };
-struct PlayAudioEvent : tinyfsm::Event {};
-struct HotwordDetectedEvent : tinyfsm::Event { };
+struct PlayBytesEvent : tinyfsm::Event {};
+struct ListeningEvent : tinyfsm::Event { };
 
 void onMqttConnect(bool sessionPresent);
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason);
@@ -290,6 +300,7 @@ void handleRequest ( AsyncWebServerRequest* request )
 }
 
 void publishDebug(const char* message) {
+    Serial.println(message);
     if (DEBUG) {
         asyncClient.publish(debugTopic.c_str(), 0, false, message);
     }
