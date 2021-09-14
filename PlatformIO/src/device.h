@@ -5,12 +5,16 @@ int idle_colors[4] = {0, 0, 255, 0};
 int wifi_conn_colors[4] = {0, 0, 255, 0};
 int wifi_disc_colors[4] = {255, 0, 0, 0};
 int ota_colors[4] = {0, 0, 0, 255};
+int tts_colors[4] = {80, 10, 185, 0};
+int error_colors[4] = {150, 255, 0, 0};
 enum {
   COLORS_HOTWORD = 0,
   COLORS_WIFI_CONNECTED = 1,
   COLORS_WIFI_DISCONNECTED = 2,
   COLORS_IDLE = 3,
-  COLORS_OTA = 4
+  COLORS_OTA = 4,
+  COLORS_TTS = 5,
+  COLORS_ERROR = 6
 };
 enum DeviceMode {
   MODE_UNUSED = -1, // indicates the no explicit mode change has been stored yet 

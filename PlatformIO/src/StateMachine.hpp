@@ -44,6 +44,7 @@ class Tts : public StateMachine
 {
   void entry(void) override {
     publishDebug("Enter Tts");
+    current_colors = COLORS_TTS;
   }
 
   void react(IdleEvent const &) override { 
@@ -95,6 +96,7 @@ class Listening : public StateMachine
     device->updateBrightness(config.hotword_brightness);
     xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
     device->updateColors(COLORS_HOTWORD);
+    current_colors = COLORS_HOTWORD;
     xSemaphoreGive(wbSemaphore);
     initHeader(device->readSize, device->width, device->rate);
     xEventGroupSetBits(audioGroup, STREAM);
@@ -139,6 +141,7 @@ class Idle : public StateMachine
     device->updateBrightness(config.brightness);
     xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
     device->updateColors(COLORS_IDLE);
+    current_colors = COLORS_IDLE;
     xSemaphoreGive(wbSemaphore);
     initHeader(device->readSize, device->width, device->rate);
     xEventGroupSetBits(audioGroup, STREAM);
@@ -193,7 +196,8 @@ class Error : public StateMachine
     publishDebug("Enter Error");
     device->updateBrightness(config.brightness);
     xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
-    device->updateColors(COLORS_OTA);
+    device->updateColors(COLORS_ERROR);
+    current_colors = COLORS_ERROR;
     xSemaphoreGive(wbSemaphore);
   }
 
@@ -562,6 +566,9 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
           if (root["reason"] == "ttsSay") {
               send_event(TtsEvent());
           }
+          if (root["reason"] == "playAudio") {
+              send_event(ListeningEvent());
+          }
         }
       }
     } else if (topicstr.find("toggleOn") != std::string::npos) {
@@ -572,8 +579,14 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
       if (!err) {
         JsonObject root = doc.as<JsonObject>();
         if (root["siteId"] == config.siteid.c_str() && root.containsKey("reason")) {
-          if (root["reason"] == "dialogueSession" || root["reason"] == "ttsSay") {
+          if (root["reason"] == "dialogueSession") {
               send_event(IdleEvent());
+          }
+          if (root["reason"] == "ttsSay") {
+              send_event(IdleEvent());
+          }
+          if (root["reason"] == "playAudio") {
+           //   send_event(IdleEvent());
           }
         }
       }
@@ -713,11 +726,11 @@ void I2Stask(void *p) {
 
       while (played < message_size && timeout == false)
       {
-        if (fsm::is_in_state<Tts>()) {
+        // if (fsm::is_in_state<Tts>()) {
           xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
-          device->animate(COLORS_OTA);
+          device->animate(current_colors);
           xSemaphoreGive(wbSemaphore); 
-        }
+        // }
         int bytes_to_write = device->writeSize;
         if (message_size - played < device->writeSize)
         {

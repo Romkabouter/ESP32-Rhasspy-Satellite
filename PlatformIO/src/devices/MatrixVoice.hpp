@@ -108,20 +108,64 @@ void MatrixVoice::updateBrightness(int brightness) {
 void MatrixVoice::animate(int colors) {
 	currentMillis = millis();
 	if (currentMillis - startMillis > 10) {
-		startMillis = millis();
 		int r = 0;
 		int g = 0;
 		int b = 0;
 		int w = 0;	
+		switch (colors) {
+			case COLORS_TTS:
+				r = tts_colors[0];
+				g = tts_colors[1];
+				b = tts_colors[2];
+				w = tts_colors[3];		
+			break;
+			case COLORS_ERROR:
+				r = error_colors[0];
+				g = error_colors[1];
+				b = error_colors[2];
+				w = error_colors[3];		
+			break;
+			case COLORS_HOTWORD:
+				r = hotword_colors[0];
+				g = hotword_colors[1];
+				b = hotword_colors[2];
+				w = hotword_colors[3];		
+			break;
+			case COLORS_WIFI_CONNECTED:
+				r = wifi_conn_colors[0];
+				g = wifi_conn_colors[1];
+				b = wifi_conn_colors[2];
+				w = wifi_conn_colors[3];		
+			break;
+			case COLORS_IDLE:
+				r = idle_colors[0];
+				g = idle_colors[1];
+				b = idle_colors[2];
+				w = idle_colors[3];		
+			break;
+			case COLORS_WIFI_DISCONNECTED:
+				r = wifi_disc_colors[0];
+				g = wifi_disc_colors[1];
+				b = wifi_disc_colors[2];
+				w = wifi_disc_colors[3];		
+			break;
+			case COLORS_OTA:
+				r = ota_colors[0];
+				g = ota_colors[1];
+				b = ota_colors[2];
+				w = ota_colors[3];		
+			break;
+		}
+		startMillis = millis();
 		for (int i = 0; i < image1d.leds.size(); i++) {
-			r = ((i + 1) * brightness / image1d.leds.size()) * ota_colors[0] / 100;
-			g = ((i + 1) * brightness / image1d.leds.size()) * ota_colors[1] / 100;
-			b = ((i + 1) * brightness / image1d.leds.size()) * ota_colors[2] / 100;
-			w = ((i + 1) * brightness / image1d.leds.size()) * ota_colors[3] / 100;
-			image1d.leds[(i + position) % image1d.leds.size()].red = pgm_read_byte(&gamma8[r]);
-			image1d.leds[(i + position) % image1d.leds.size()].green = pgm_read_byte(&gamma8[g]);
-			image1d.leds[(i + position) % image1d.leds.size()].blue = pgm_read_byte(&gamma8[b]);
-			image1d.leds[(i + position) % image1d.leds.size()].white = pgm_read_byte(&gamma8[w]);
+			int red = ((i + 1) * brightness / image1d.leds.size()) * r / 100;
+			int green = ((i + 1) * brightness / image1d.leds.size()) * g / 100;
+			int blue = ((i + 1) * brightness / image1d.leds.size()) * b / 100;
+			int white = ((i + 1) * brightness / image1d.leds.size()) * w / 100;
+			image1d.leds[(i + position) % image1d.leds.size()].red = pgm_read_byte(&gamma8[red]);
+			image1d.leds[(i + position) % image1d.leds.size()].green = pgm_read_byte(&gamma8[green]);
+			image1d.leds[(i + position) % image1d.leds.size()].blue = pgm_read_byte(&gamma8[blue]);
+			image1d.leds[(i + position) % image1d.leds.size()].white = pgm_read_byte(&gamma8[white]);
 		}
 		position++;
 		position %= image1d.leds.size();
@@ -135,6 +179,18 @@ void MatrixVoice::updateColors(int colors) {
 	int b = 0;
 	int w = 0;	
   switch (colors) {
+    case COLORS_TTS:
+			r = tts_colors[0];
+			g = tts_colors[1];
+			b = tts_colors[2];
+			w = tts_colors[3];		
+    break;
+    case COLORS_ERROR:
+			r = error_colors[0];
+			g = error_colors[1];
+			b = error_colors[2];
+			w = error_colors[3];		
+    break;
     case COLORS_HOTWORD:
 			r = hotword_colors[0];
 			g = hotword_colors[1];

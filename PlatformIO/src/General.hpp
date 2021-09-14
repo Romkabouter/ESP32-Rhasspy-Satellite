@@ -89,6 +89,7 @@ int queueDelay = 10;
 int sampleRate = 16000;
 int numChannels = 2;
 int bitDepth = 16;
+int current_colors = COLORS_IDLE;
 static EventGroupHandle_t audioGroup;
 SemaphoreHandle_t wbSemaphore;
 TaskHandle_t i2sHandle;
