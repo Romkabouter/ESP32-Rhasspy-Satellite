@@ -25,6 +25,10 @@ public:
 
 class Speaking : public StateMachine
 {
+  void entry(void) override {
+    Serial.println("Enter Speaking");
+  }
+
   void react(IdleEvent const &) override { 
     transit<Idle>();
   }
@@ -47,6 +51,7 @@ class Speaking : public StateMachine
 class Updating : public StateMachine
 {
   void entry(void) override {
+    Serial.println("Enter Updating");
     xEventGroupClearBits(audioGroup, PLAY);
     xEventGroupClearBits(audioGroup, STREAM);
     device->updateBrightness(config.brightness);
@@ -145,10 +150,6 @@ class Idle : public StateMachine
     transit<Speaking>();
   }
   
-  void react(IdleEvent const &) override { 
-    transit<Idle>();
-  }
-
   void react(OtaEvent const &) override { 
     transit<Updating>();
   }
