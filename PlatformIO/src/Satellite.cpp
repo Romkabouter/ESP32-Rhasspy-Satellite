@@ -97,6 +97,10 @@
     - Adding better logic for saving settings in webUI
     - Add actual hardware capabilities in webUI
     - Restructure AudioKit code
+   v7.7
+    - Added ESP32_POE_ISO and TAUDIO
+    - Added animation function, work in progress
+    - Added Speaking state for animation preparation (works for matrixvoice)
 
 * ************************************************************************ */
 
