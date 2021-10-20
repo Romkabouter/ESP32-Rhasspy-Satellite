@@ -28,7 +28,8 @@ if os.path.isfile(settings):
         ("MQTT_PASS", "\\\"" + config[sectionMqtt]["password"] + "\\\""),
         ("MQTT_MAX_PACKET_SIZE", 2000),
         ("CONFIG_ASYNC_TCP_RUNNING_CORE", 1),
-        ("DEVICE_TYPE", config[sectionGeneral]["device_type"])
+        ("DEVICE_TYPE", config[sectionGeneral]["device_type"]),
+        ("NETWORK_TYPE", config[sectionGeneral]["network_type"])
     ]
 
     # MQTT "ip" was replaced with "hostname" that can now be an IP or a DNS hostname of the MQTT server

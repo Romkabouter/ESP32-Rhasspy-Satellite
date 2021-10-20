@@ -30,7 +30,9 @@ Support for Snips is dropped.
 
 [INMP441](inmp441.md)
 
-[MAX98357a](inmp441max98357a.md)
+[INMP441MAX98357A](inmp441max98357a.md)
+
+[ESP32-POE-ISO](Esp32-poe-iso.md)
 
 ## MQTT commands
 

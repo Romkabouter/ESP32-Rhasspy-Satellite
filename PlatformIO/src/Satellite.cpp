@@ -97,12 +97,24 @@
     - Adding better logic for saving settings in webUI
     - Add actual hardware capabilities in webUI
     - Restructure AudioKit code
+   v7.7
+    - Added ESP32_POE_ISO and TAUDIO
+    - Added animation function, work in progress
+    - Added Speaking state for animation preparation (works for matrixvoice)
 
 * ************************************************************************ */
 
 #include <Arduino.h>
 #include <ArduinoOTA.h>
-#include <WiFi.h>
+#define NETWORK_WIFI 0
+#define NETWORK_ETHERNET 1
+
+#if NETWORK_TYPE == NETWORK_ETHERNET
+  #include <ETH.h>
+#else
+  #include <WiFi.h>
+#endif
+
 #include "device.h"
 
 #define M5ATOMECHO 0
@@ -110,6 +122,8 @@
 #define AUDIOKIT 2
 #define INMP441 3
 #define INMP441MAX98357A 4
+#define ESP32_POE_ISO 5
+#define TAUDIO 6
 
 #ifdef PI_DEVICE_TYPE
 #undef DEVICE_TYPE
@@ -134,6 +148,12 @@
 #elif DEVICE_TYPE == INMP441MAX98357A
   #include "devices/Inmp441Max98357a.hpp"
   Inmp441Max98357a *device = new Inmp441Max98357a();
+#elif DEVICE_TYPE == ESP32_POE_ISO
+  #include "devices/Esp32_poe_iso.hpp"
+  Esp32_poe_iso *device = new Esp32_poe_iso();
+#elif DEVICE_TYPE == TAUDIO
+  #include "devices/TAudio.hpp"
+  TAudio *device = new TAudio();
 #else
   #error DEVICE_TYPE is out of range  
 #endif
@@ -171,6 +191,7 @@ void setup() {
   ArduinoOTA
     .onStart([]() {
       Serial.println("Uploading...");
+      send_event(OtaEvent());
     })
     .onEnd([]() {
       Serial.println("\nEnd");

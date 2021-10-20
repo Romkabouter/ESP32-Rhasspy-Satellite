@@ -2,7 +2,13 @@
 
 #include <tinyfsm.hpp>
 #include <Arduino.h>
-#include <WiFi.h>
+
+#if NETWORK_TYPE == NETWORK_ETHERNET
+    #include <ETH.h>
+#else
+    #include <WiFi.h>
+#endif
+
 #include <AsyncMqttClient.h>
 #include <PubSubClient.h>
 #include "SPIFFS.h"
@@ -71,6 +77,8 @@ std::string audioTopic = config.siteid + std::string("/audio");
 std::string ledTopic = config.siteid + std::string("/led");
 std::string debugTopic = config.siteid + std::string("/debug");
 std::string restartTopic = config.siteid + std::string("/restart");
+std::string sayTopic = "hermes/tts/say";
+std::string sayFinishedTopic = "hermes/tts/sayFinished";
 AsyncMqttClient asyncClient; 
 WiFiClient net;
 PubSubClient audioServer(net); 
@@ -88,6 +96,8 @@ struct WifiDisconnected;
 struct MQTTDisconnected;
 struct HotwordDetected;
 struct Idle;
+struct Speaking;
+struct Updating;
 struct PlayAudio;
 
 struct WifiDisconnectEvent : tinyfsm::Event { };
@@ -95,6 +105,8 @@ struct WifiConnectEvent : tinyfsm::Event { };
 struct MQTTDisconnectedEvent : tinyfsm::Event { };
 struct MQTTConnectedEvent : tinyfsm::Event { };
 struct IdleEvent : tinyfsm::Event { };
+struct SpeakEvent : tinyfsm::Event { };
+struct OtaEvent : tinyfsm::Event { };
 struct StreamAudioEvent : tinyfsm::Event { };
 struct PlayAudioEvent : tinyfsm::Event {};
 struct HotwordDetectedEvent : tinyfsm::Event { };

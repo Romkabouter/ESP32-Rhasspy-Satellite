@@ -13,12 +13,52 @@ public:
   virtual void react(MQTTDisconnectedEvent const &) {};
   virtual void react(StreamAudioEvent const &) {};
   virtual void react(IdleEvent const &) {};
+  virtual void react(SpeakEvent const &) {};  
+  virtual void react(OtaEvent const &) {};
   virtual void react(PlayAudioEvent const &) {};
   virtual void react(HotwordDetectedEvent const &) {};
 
   virtual void entry(void) {}; 
   virtual void run(void) {}; 
   void         exit(void) {};
+};
+
+class Speaking : public StateMachine
+{
+  void entry(void) override {
+    Serial.println("Enter Speaking");
+  }
+
+  void react(IdleEvent const &) override { 
+    transit<Idle>();
+  }
+
+  void react(HotwordDetectedEvent const &) override { 
+    transit<HotwordDetected>();
+  }
+
+  void react(StreamAudioEvent const &) override { 
+    xEventGroupClearBits(audioGroup, PLAY);
+    xEventGroupSetBits(audioGroup, STREAM);
+  };
+
+  void react(PlayAudioEvent const &) override { 
+    xEventGroupClearBits(audioGroup, STREAM);
+    xEventGroupSetBits(audioGroup, PLAY);
+  };
+};
+
+class Updating : public StateMachine
+{
+  void entry(void) override {
+    Serial.println("Enter Updating");
+    xEventGroupClearBits(audioGroup, PLAY);
+    xEventGroupClearBits(audioGroup, STREAM);
+    device->updateBrightness(config.brightness);
+    xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
+    device->updateColors(COLORS_OTA);
+    xSemaphoreGive(wbSemaphore);
+  }
 };
 
 class HotwordDetected : public StateMachine
@@ -28,10 +68,9 @@ class HotwordDetected : public StateMachine
     xEventGroupClearBits(audioGroup, PLAY);
     xEventGroupClearBits(audioGroup, STREAM);
     device->updateBrightness(config.hotword_brightness);
-    if (xSemaphoreTake(wbSemaphore, (TickType_t)10000) == pdTRUE) {
-      device->updateColors(COLORS_HOTWORD);
-      xSemaphoreGive(wbSemaphore);
-    }
+    xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
+    device->updateColors(COLORS_HOTWORD);
+    xSemaphoreGive(wbSemaphore);
     initHeader(device->readSize, device->width, device->rate);
     xEventGroupSetBits(audioGroup, STREAM);
   }
@@ -50,6 +89,10 @@ class HotwordDetected : public StateMachine
     transit<Idle>();
   }
 
+  void react(SpeakEvent const &) override { 
+    transit<Speaking>();
+  }
+
   void react(WifiDisconnectEvent const &) override { 
     transit<WifiDisconnected>();
   };
@@ -65,10 +108,9 @@ class Idle : public StateMachine
     xEventGroupClearBits(audioGroup, PLAY);
     xEventGroupClearBits(audioGroup, STREAM);
     device->updateBrightness(config.brightness);
-    if (xSemaphoreTake(wbSemaphore, (TickType_t)10000) == pdTRUE) {
-      device->updateColors(COLORS_IDLE);
-      xSemaphoreGive(wbSemaphore);
-    }
+    xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
+    device->updateColors(COLORS_IDLE);
+    xSemaphoreGive(wbSemaphore);
     initHeader(device->readSize, device->width, device->rate);
     xEventGroupSetBits(audioGroup, STREAM);
   }
@@ -104,6 +146,13 @@ class Idle : public StateMachine
     xEventGroupSetBits(audioGroup, PLAY);
   };
 
+  void react(SpeakEvent const &) override { 
+    transit<Speaking>();
+  }
+  
+  void react(OtaEvent const &) override { 
+    transit<Updating>();
+  }
 };
 
 class MQTTConnected : public StateMachine {
@@ -117,6 +166,8 @@ class MQTTConnected : public StateMachine {
     asyncClient.subscribe(debugTopic.c_str(), 0);
     asyncClient.subscribe(ledTopic.c_str(), 0);
     asyncClient.subscribe(restartTopic.c_str(), 0);
+    asyncClient.subscribe(sayTopic.c_str(), 0);
+    asyncClient.subscribe(sayFinishedTopic.c_str(), 0);
     transit<Idle>();
   }
 
@@ -185,7 +236,11 @@ class WifiConnected : public StateMachine
 {
   void entry(void) override {
     Serial.println("Enter WifiConnected");
-    Serial.printf("Connected to Wifi with IP: %s, SSID: %s, BSSID: %s, RSSI: %d\n", WiFi.localIP().toString().c_str(), WiFi.SSID().c_str(), WiFi.BSSIDstr().c_str(), WiFi.RSSI());
+    #if NETWORK_TYPE == NETWORK_ETHERNET
+        Serial.printf("Connected to LAN with IP: %s, \n", ETH.localIP().toString().c_str());
+    #else
+        Serial.printf("Connected to Wifi with IP: %s, SSID: %s, BSSID: %s, RSSI: %d\r\n", WiFi.localIP().toString().c_str(), WiFi.SSID().c_str(), WiFi.BSSIDstr().c_str(), WiFi.RSSI());
+    #endif
     xEventGroupClearBits(audioGroup, PLAY);
     xEventGroupClearBits(audioGroup, STREAM);
     device->updateBrightness(config.brightness);
@@ -220,79 +275,86 @@ class WifiDisconnected : public StateMachine
     Serial.println("Enter WifiDisconnected");
     Serial.printf("Total heap: %d\r\n", ESP.getHeapSize());
     Serial.printf("Free heap: %d\r\n", ESP.getFreeHeap());
-    device->updateBrightness(config.brightness);
-    device->updateColors(COLORS_WIFI_DISCONNECTED);
-    
-    // Set static ip address
-    #if defined(HOST_IP) && defined(HOST_GATEWAY)  && defined(HOST_SUBNET)  && defined(HOST_DNS1)
-      IPAddress ip;
-      IPAddress gateway;
-      IPAddress subnet;
-      IPAddress dns1;
-      IPAddress dns2;
 
-      ip.fromString(HOST_IP);
-      gateway.fromString(HOST_GATEWAY);
-      subnet.fromString(HOST_SUBNET);
-      dns1.fromString(HOST_DNS1);
+    #if NETWORK_TYPE == NETWORK_ETHERNET
+      WiFi.onEvent(WiFiEvent);
+      ETH.begin();
+    #else
+      device->updateBrightness(config.brightness);
+      device->updateColors(COLORS_WIFI_DISCONNECTED);
+      
+      // Set static ip address
+      #if defined(HOST_IP) && defined(HOST_GATEWAY)  && defined(HOST_SUBNET)  && defined(HOST_DNS1)
+        IPAddress ip;
+        IPAddress gateway;
+        IPAddress subnet;
+        IPAddress dns1;
+        IPAddress dns2;
 
-      #ifdef HOST_DNS2
-        dns2.fromString(HOST_DNS2);
+        ip.fromString(HOST_IP);
+        gateway.fromString(HOST_GATEWAY);
+        subnet.fromString(HOST_SUBNET);
+        dns1.fromString(HOST_DNS1);
+
+        #ifdef HOST_DNS2
+          dns2.fromString(HOST_DNS2);
+        #endif
+
+        Serial.printf("Set static ip: %s, gateway: %s, subnet: %s, dns1: %s, dns2: %s\r\n", ip.toString().c_str(), gateway.toString().c_str(), subnet.toString().c_str(), dns1.toString().c_str(), dns2.toString().c_str());
+        WiFi.config(ip, gateway, subnet, dns1, dns2);
       #endif
 
-      Serial.printf("Set static ip: %s, gateway: %s, subnet: %s, dns1: %s, dns2: %s\r\n", ip.toString().c_str(), gateway.toString().c_str(), subnet.toString().c_str(), dns1.toString().c_str(), dns2.toString().c_str());
-      WiFi.config(ip, gateway, subnet, dns1, dns2);
-    #endif
+      WiFi.onEvent(WiFiEvent);
+      WiFi.mode(WIFI_STA);
 
-    WiFi.onEvent(WiFiEvent);
-    WiFi.mode(WIFI_STA);
+      // find best AP (BSSID) if there are several AP for a given SSID
+      // https://github.com/arendst/Tasmota/blob/db615c5b0ba0053c3991cf40dd47b0d484ac77ae/tasmota/support_wifi.ino#L261
+      // https://esp32.com/viewtopic.php?t=18979
+      #if defined(SCAN_STRONGEST_AP)
+        Serial.println("WiFi scan start");
+        int n = WiFi.scanNetworks(); // WiFi.scanNetworks will return the number of networks found
+        // or WIFI_SCAN_RUNNING   (-1), WIFI_SCAN_FAILED    (-2)
 
-    // find best AP (BSSID) if there are several AP for a given SSID
-    // https://github.com/arendst/Tasmota/blob/db615c5b0ba0053c3991cf40dd47b0d484ac77ae/tasmota/support_wifi.ino#L261
-    // https://esp32.com/viewtopic.php?t=18979
-    #if defined(SCAN_STRONGEST_AP)
-      Serial.println("WiFi scan start");
-      int n = WiFi.scanNetworks(); // WiFi.scanNetworks will return the number of networks found
-      // or WIFI_SCAN_RUNNING   (-1), WIFI_SCAN_FAILED    (-2)
-
-      Serial.printf("WiFi scan done, result %d\n", n);
-      if (n <= 0) {
-        Serial.println("error or no networks found");
-      } else {
-        for (int i = 0; i < n; ++i) {
-          // Print metrics for each network found
-          Serial.printf("%d: BSSID: %s  %ddBm, %d%% %s, %s (%d)\n", i + 1, WiFi.BSSIDstr(i).c_str(), WiFi.RSSI(i), constrain(2 * (WiFi.RSSI(i) + 100), 0, 100),
-            (WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? "open     " : "encrypted", WiFi.SSID(i).c_str(), WiFi.channel(i));
-        }
-      }
-      Serial.println();
-
-      // find first that matches SSID. Expect results to be sorted by signal strength.
-      int i = 0;
-      while ( String(WIFI_SSID) != String(WiFi.SSID(i)) && (i < n)) {
-        i++;
-      }
-
-      if (i == n || n < 0) {
-        Serial.println("No network with SSID " WIFI_SSID " found!");
-        WiFi.begin(WIFI_SSID, WIFI_PASS); // try basic method anyway
-      } else {
-        Serial.printf("SSID match found at index: %d\n", i + 1);
-        WiFi.begin(WIFI_SSID, WIFI_PASS, 0, WiFi.BSSID(i)); // pass selected BSSID
-      }
-    #else
-      WiFi.begin(WIFI_SSID, WIFI_PASS);
-    #endif
-
-    while (WiFi.waitForConnectResult() != WL_CONNECTED) {
-        retryCount++;
-        if (retryCount > 2) {
-            Serial.println("Connection Failed! Rebooting...");
-            ESP.restart();
+        Serial.printf("WiFi scan done, result %d\r\n", n);
+        if (n <= 0) {
+          Serial.println("error or no networks found");
         } else {
-            Serial.println("Connection Failed! Retry...");
+          for (int i = 0; i < n; ++i) {
+            // Print metrics for each network found
+            Serial.printf("%d: BSSID: %s  %ddBm, %d%% %s, %s (%d)\r\n", i + 1, WiFi.BSSIDstr(i).c_str(), WiFi.RSSI(i), constrain(2 * (WiFi.RSSI(i) + 100), 0, 100),
+              (WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? "open     " : "encrypted", WiFi.SSID(i).c_str(), WiFi.channel(i));
+          }
         }
-    }
+        Serial.println();
+
+        // find first that matches SSID. Expect results to be sorted by signal strength.
+        int i = 0;
+        while ( String(WIFI_SSID) != String(WiFi.SSID(i)) && (i < n)) {
+          i++;
+        }
+
+        if (i == n || n < 0) {
+          Serial.println("No network with SSID " WIFI_SSID " found!");
+          WiFi.begin(WIFI_SSID, WIFI_PASS); // try basic method anyway
+        } else {
+          Serial.printf("SSID match found at index: %d\r\n", i + 1);
+          WiFi.begin(WIFI_SSID, WIFI_PASS, 0, WiFi.BSSID(i)); // pass selected BSSID
+        }
+      #else
+        WiFi.begin(WIFI_SSID, WIFI_PASS);
+      #endif
+
+      while (WiFi.waitForConnectResult() != WL_CONNECTED) {
+          retryCount++;
+          if (retryCount > 2) {
+              Serial.println("Connection Failed! Rebooting...");
+              ESP.restart();
+          } else {
+              Serial.println("Connection Failed! Retry...");
+          }
+      }
+    #endif
+
   }
 
   void react(WifiConnectEvent const &) override { 
@@ -406,7 +468,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
   // complete or enf of message has been received
   if (len + index == total)
   {
-    if (topicstr.find("toggleOff") != std::string::npos)
+    if (topicstr.find(sayFinishedTopic.c_str()) != std::string::npos)
     {
       std::string payloadstr(payload);
       StaticJsonDocument<300> doc;
@@ -414,10 +476,37 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
       // Check if this is for us
       if (!err) {
         JsonObject root = doc.as<JsonObject>();
-        if (root["siteId"] == config.siteid.c_str()
-          && root.containsKey("reason")
-          && root["reason"] == "dialogueSession") {
-            send_event(HotwordDetectedEvent());
+        if (root["siteId"] == config.siteid.c_str()) {
+          send_event(IdleEvent());
+        }
+      }
+    } else if (topicstr.find(sayTopic.c_str()) != std::string::npos)
+    {
+      std::string payloadstr(payload);
+      StaticJsonDocument<300> doc;
+      DeserializationError err = deserializeJson(doc, payloadstr.c_str());
+      // Check if this is for us
+      if (!err) {
+        JsonObject root = doc.as<JsonObject>();
+        if (root["siteId"] == config.siteid.c_str()) {
+          send_event(SpeakEvent());
+        }
+      }
+    } else if (topicstr.find("toggleOff") != std::string::npos)
+    {
+      std::string payloadstr(payload);
+      StaticJsonDocument<300> doc;
+      DeserializationError err = deserializeJson(doc, payloadstr.c_str());
+      // Check if this is for us
+      if (!err) {
+        JsonObject root = doc.as<JsonObject>();
+        if (root["siteId"] == config.siteid.c_str() && root.containsKey("reason")) {
+          if (root["reason"] == "dialogueSession") {
+              send_event(HotwordDetectedEvent());
+          }
+          if (root["reason"] == "ttsSay") {
+              send_event(SpeakEvent());
+          }
         }
       }
     } else if (topicstr.find("toggleOn") != std::string::npos) {
@@ -427,10 +516,10 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
       // Check if this is for us
       if (!err) {
         JsonObject root = doc.as<JsonObject>();
-        if (root["siteId"] == config.siteid.c_str() 
-          && root.containsKey("reason")
-          && root["reason"] == "dialogueSession") {
-          send_event(IdleEvent());
+        if (root["siteId"] == config.siteid.c_str() && root.containsKey("reason")) {
+          if (root["reason"] == "dialogueSession" || root["reason"] == "ttsSay") {
+              send_event(IdleEvent());
+          }
         }
       }
     }
@@ -486,6 +575,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
         if (saveNeeded) {
           saveConfiguration(configfile, config);
         }
+        send_event(IdleEvent());
       } else {
         publishDebug(err.c_str());
       }
@@ -550,22 +640,29 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
     }
     else
     {
-      Serial.printf("Unhandled partial message received, topic '%s'", topic);
+      Serial.printf("Unhandled partial message received, topic '%s'\r\n", topic);
     }
   }
 }
 
 void I2Stask(void *p) {  
   while (1) {    
-    if (xEventGroupGetBits(audioGroup) == PLAY && xSemaphoreTake(wbSemaphore, (TickType_t)5000) == pdTRUE) {
+    if (xEventGroupGetBits(audioGroup) == PLAY) {
       size_t bytes_written;
       boolean timeout = false;
       int played = 44;
 
+      xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
       device->setWriteMode(sampleRate, bitDepth, numChannels);
+      xSemaphoreGive(wbSemaphore); 
 
       while (played < message_size && timeout == false)
       {
+        if (fsm::is_in_state<Speaking>()) {
+          xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
+          device->animate(COLORS_OTA);
+          xSemaphoreGive(wbSemaphore); 
+        }
         int bytes_to_write = device->writeSize;
         if (message_size - played < device->writeSize)
         {
@@ -578,7 +675,7 @@ void I2Stask(void *p) {
           {
             if (!audioData.pop(data[i]))
             {
-              Serial.printf("Buffer underflow %d %ld\n", played + i, message_size);
+              Serial.printf("Buffer underflow %d %ld\r\n", played + i, message_size);
               vTaskDelay(60);
               bytes_to_write = (i)*2;
             }
@@ -586,9 +683,10 @@ void I2Stask(void *p) {
           played = played + bytes_to_write;
           if (!config.mute_output)
           {
+            xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
             device->muteOutput(false);
             device->writeAudio((uint8_t*)data, bytes_to_write, &bytes_written);
-
+            xSemaphoreGive(wbSemaphore);
           }
           else
           {
@@ -600,16 +698,20 @@ void I2Stask(void *p) {
         }
       }
       asyncClient.publish(playFinishedTopic.c_str(), 0, false, finishedMsg.c_str());
+      xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
       device->muteOutput(true);
+      xSemaphoreGive(wbSemaphore); 
       audioData.clear();
       Serial.println("Done");
-      xSemaphoreGive(wbSemaphore); 
       send_event(StreamAudioEvent());
     }
-    if (xEventGroupGetBits(audioGroup) == STREAM && !config.mute_input && xSemaphoreTake(wbSemaphore, (TickType_t)5000) == pdTRUE) {     
+    if (xEventGroupGetBits(audioGroup) == STREAM && !config.mute_input) {     
+      xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
       device->setReadMode();
+      xSemaphoreGive(wbSemaphore); 
       uint8_t data[device->readSize * device->width];
       if (audioServer.connected()) {
+        xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
         if (device->readAudio(data, device->readSize * device->width)) {
           // only send audio if hotword_detection is HW_REMOTE.
           //TODO when LOCAL is supported: check if hotword is detected and send audio as well in that case
@@ -631,11 +733,11 @@ void I2Stask(void *p) {
           //Loop, because otherwise this causes timeouts
           audioServer.loop();
         }
+        xSemaphoreGive(wbSemaphore); 
       } else {
         xEventGroupClearBits(audioGroup, STREAM);
         send_event(MQTTDisconnectedEvent());
       }
-      xSemaphoreGive(wbSemaphore); 
     }
 
     //Added for stability when neither PLAY or STREAM is set.
@@ -664,6 +766,41 @@ void initHeader(int readSize, int width, int rate) {
 
 void WiFiEvent(WiFiEvent_t event) {
     switch (event) {
+
+      #if NETWORK_TYPE == NETWORK_ETHERNET
+        case SYSTEM_EVENT_ETH_START:
+          Serial.println("ETH Started");
+          //set eth hostname here
+          ETH.setHostname(HOSTNAME);
+          break;
+        case SYSTEM_EVENT_ETH_CONNECTED:
+          Serial.println("ETH Connected");
+          break;
+        case SYSTEM_EVENT_ETH_GOT_IP:
+          Serial.print("ETH MAC: ");
+          Serial.print(ETH.macAddress());
+          Serial.print(", IPv4: ");
+          Serial.print(ETH.localIP());
+          if (ETH.fullDuplex()) {
+            Serial.print(", FULL_DUPLEX");
+          }
+          Serial.print(", ");
+          Serial.print(ETH.linkSpeed());
+          Serial.println("Mbps");
+            send_event(WifiConnectEvent());
+          break;
+        case SYSTEM_EVENT_ETH_DISCONNECTED:
+          Serial.println("ETH Disconnected");
+           send_event(WifiDisconnectEvent());
+          break;
+        case SYSTEM_EVENT_ETH_STOP:
+          Serial.println("ETH Stopped");
+          send_event(WifiDisconnectEvent());
+          break;
+        default:
+          Serial.println("ETH Event");
+          break;
+      #else
         case SYSTEM_EVENT_STA_START:
             WiFi.setHostname(HOSTNAME);
             break;
@@ -675,5 +812,6 @@ void WiFiEvent(WiFiEvent_t event) {
             break;
         default:
             break;
+      #endif
     }
 }
