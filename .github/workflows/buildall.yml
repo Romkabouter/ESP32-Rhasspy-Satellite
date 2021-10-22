@@ -13,6 +13,8 @@ jobs:
           - "inmp441Mmax98357a"
           - "matrixvoice"
           - "m5atomecho"
+          - "esp32-poe-iso"
+          - "taudio"
 
     runs-on: ubuntu-latest
 

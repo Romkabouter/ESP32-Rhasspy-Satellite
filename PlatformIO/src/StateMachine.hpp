@@ -78,6 +78,7 @@ class TtsPlay : public StateMachine
 class Updating : public StateMachine
 {
   void entry(void) override {
+    Serial.println("Enter Updating");
     xEventGroupClearBits(audioGroup, PLAY);
     xEventGroupClearBits(audioGroup, STREAM);
     device->updateBrightness(config.brightness);
@@ -221,6 +222,10 @@ class ErrorPlay : public StateMachine
   void react(EndPlayAudioEvent const &) override { 
     publishDebug("EndPlayAudioEvent in ErrorPlay");
     transit<Error>();
+  }
+  
+  void react(UpdateEvent const &) override { 
+    transit<Updating>();
   }
 };
 

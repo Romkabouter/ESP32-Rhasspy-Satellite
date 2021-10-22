@@ -97,6 +97,10 @@
     - Adding better logic for saving settings in webUI
     - Add actual hardware capabilities in webUI
     - Restructure AudioKit code
+   v7.7
+    - Added ESP32_POE_ISO and TAUDIO
+    - Added animation function, work in progress
+    - Added Speaking state for animation preparation (works for matrixvoice)
 
 * ************************************************************************ */
 
@@ -119,6 +123,7 @@
 #define INMP441 3
 #define INMP441MAX98357A 4
 #define ESP32_POE_ISO 5
+#define TAUDIO 6
 
 #ifdef PI_DEVICE_TYPE
 #undef DEVICE_TYPE
@@ -146,6 +151,9 @@
 #elif DEVICE_TYPE == ESP32_POE_ISO
   #include "devices/Esp32_poe_iso.hpp"
   Esp32_poe_iso *device = new Esp32_poe_iso();
+#elif DEVICE_TYPE == TAUDIO
+  #include "devices/TAudio.hpp"
+  TAudio *device = new TAudio();
 #else
   #error DEVICE_TYPE is out of range  
 #endif
