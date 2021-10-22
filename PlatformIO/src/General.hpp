@@ -121,6 +121,7 @@ struct EndPlayAudioEvent : tinyfsm::Event {};
 struct StreamAudioEvent : tinyfsm::Event { };
 struct PlayBytesEvent : tinyfsm::Event {};
 struct ListeningEvent : tinyfsm::Event { };
+struct UpdateConfigurationEvent : tinyfsm::Event { };
 
 void onMqttConnect(bool sessionPresent);
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason);

@@ -34,6 +34,13 @@ public:
     xEventGroupSetBits(audioGroup, PLAY);
   };
   virtual void react(ListeningEvent const &) {};
+  virtual void react(UpdateConfigurationEvent const &) {
+    device->updateBrightness(config.brightness);
+    xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
+    device->updateColors(COLORS_IDLE);
+    current_colors = COLORS_IDLE;
+    xSemaphoreGive(wbSemaphore);
+  };
 
   virtual void entry(void) {}; 
   virtual void run(void) {}; 
@@ -648,7 +655,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
         if (saveNeeded) {
           saveConfiguration(configfile, config);
         }
-        send_event(IdleEvent());
+        send_event(UpdateConfigurationEvent());
       } else {
         publishDebug(err.c_str());
       }
