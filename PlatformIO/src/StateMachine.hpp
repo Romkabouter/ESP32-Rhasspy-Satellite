@@ -487,7 +487,7 @@ void handle_playBytes(const std::string& topicstr, uint8_t *payload, size_t len,
   // start of message
   if (index == 0)
   {
-    send_event(BeginPlayAudioEvent());
+   // send_event(BeginPlayAudioEvent());
     message_size = total;
     audioData.clear();
     XT_Wav_Class Message((const uint8_t *)payload);
@@ -516,7 +516,7 @@ void handle_playBytes(const std::string& topicstr, uint8_t *payload, size_t len,
 
     std::vector<std::string> topicparts = explode("/", topicstr);
     finishedMsg = "{\"id\":\"" + topicparts[4] + "\",\"siteId\":\"" + config.siteid + "\",\"sessionId\":null}";
-    send_event(EndPlayAudioEvent());
+    //send_event(EndPlayAudioEvent());
   }
 }
 
@@ -524,7 +524,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
 {
   const std::string topicstr(topic);
 
-  // complete or enf of message has been received
+  // complete or end of message has been received
   if (len + index == total)
   {
     if (topicstr.find(errorTopic.c_str()) != std::string::npos)
@@ -575,12 +575,12 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
           if (root["reason"] == "dialogueSession") {
               send_event(ListeningEvent());
           }
-          if (root["reason"] == "ttsSay") {
-              send_event(TtsEvent());
-          }
-          if (root["reason"] == "playAudio") {
-              send_event(ListeningEvent());
-          }
+          // if (root["reason"] == "ttsSay") {
+          //     send_event(TtsEvent());
+          // }
+          // if (root["reason"] == "playAudio") {
+          //     send_event(ListeningEvent());
+          // }
         }
       }
     } else if (topicstr.find("toggleOn") != std::string::npos) {
@@ -594,12 +594,12 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
           if (root["reason"] == "dialogueSession") {
               send_event(IdleEvent());
           }
-          if (root["reason"] == "ttsSay") {
-              send_event(IdleEvent());
-          }
-          if (root["reason"] == "playAudio") {
-           //   send_event(IdleEvent());
-          }
+          // if (root["reason"] == "ttsSay") {
+          //     send_event(IdleEvent());
+          // }
+          // if (root["reason"] == "playAudio") {
+          //  //   send_event(IdleEvent());
+          // }
         }
       }
     }
