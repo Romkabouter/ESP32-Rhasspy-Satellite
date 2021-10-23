@@ -23,6 +23,7 @@ public:
   virtual void react(EndPlayAudioEvent const &) {};
   virtual void react(StreamAudioEvent const &) {
     xEventGroupClearBits(audioGroup, PLAY);
+    dispatch(EndPlayAudioEvent());
     xEventGroupSetBits(audioGroup, STREAM);
   };
   virtual void react(IdleEvent const &) {};
@@ -31,6 +32,7 @@ public:
   virtual void react(UpdateEvent const &) {};
   virtual void react(PlayBytesEvent const &) {
     xEventGroupClearBits(audioGroup, STREAM);
+    dispatch(BeginPlayAudioEvent());
     xEventGroupSetBits(audioGroup, PLAY);
   };
   virtual void react(ListeningEvent const &) {};
@@ -516,7 +518,6 @@ void handle_playBytes(const std::string& topicstr, uint8_t *payload, size_t len,
 
     std::vector<std::string> topicparts = explode("/", topicstr);
     finishedMsg = "{\"id\":\"" + topicparts[4] + "\",\"siteId\":\"" + config.siteid + "\",\"sessionId\":null}";
-    //send_event(EndPlayAudioEvent());
   }
 }
 
