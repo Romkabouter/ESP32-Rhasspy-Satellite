@@ -90,11 +90,12 @@ class Updating : public StateMachine
 {
   void entry(void) override {
     Serial.println("Enter Updating");
+    current_colors = COLORS_OTA;
     xEventGroupClearBits(audioGroup, PLAY);
     xEventGroupClearBits(audioGroup, STREAM);
     device->updateBrightness(config.brightness);
     xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
-    device->updateColors(COLORS_OTA);
+    device->updateColors(current_colors);
     xSemaphoreGive(wbSemaphore);
   }
 };
@@ -103,12 +104,12 @@ class Listening : public StateMachine
 {
   void entry(void) override {
     publishDebug("Enter Listening");
+    current_colors = COLORS_HOTWORD;
     xEventGroupClearBits(audioGroup, PLAY);
     xEventGroupClearBits(audioGroup, STREAM);
     device->updateBrightness(config.hotword_brightness);
     xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
-    device->updateColors(COLORS_HOTWORD);
-    current_colors = COLORS_HOTWORD;
+    device->updateColors(current_colors);
     xSemaphoreGive(wbSemaphore);
     initHeader(device->readSize, device->width, device->rate);
     xEventGroupSetBits(audioGroup, STREAM);
@@ -148,12 +149,12 @@ class Idle : public StateMachine
   void entry(void) override {
     publishDebug("Enter Idle");
     hotwordDetected = false;
+    current_colors = COLORS_IDLE;
     xEventGroupClearBits(audioGroup, PLAY);
     xEventGroupClearBits(audioGroup, STREAM);
     device->updateBrightness(config.brightness);
     xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
-    device->updateColors(COLORS_IDLE);
-    current_colors = COLORS_IDLE;
+    device->updateColors(current_colors);
     xSemaphoreGive(wbSemaphore);
     initHeader(device->readSize, device->width, device->rate);
     xEventGroupSetBits(audioGroup, STREAM);
@@ -206,10 +207,10 @@ class Error : public StateMachine
 {
   void entry(void) override {
     publishDebug("Enter Error");
+    current_colors = COLORS_ERROR;
     device->updateBrightness(config.brightness);
     xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
-    device->updateColors(COLORS_ERROR);
-    current_colors = COLORS_ERROR;
+    device->updateColors(current_colors);
     xSemaphoreGive(wbSemaphore);
   }
 
@@ -639,6 +640,12 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
           hotword_colors[1] = root["hotword"][1];
           hotword_colors[2] = root["hotword"][2];
           hotword_colors[3] = root["hotword"][3];
+        }
+        if (root.containsKey("tts")) {
+          tts_colors[0] = root["tts"][0];
+          tts_colors[1] = root["tts"][1];
+          tts_colors[2] = root["tts"][2];
+          tts_colors[3] = root["tts"][3];
         }
         if (root.containsKey("idle")) {
           idle_colors[0] = root["idle"][0];
