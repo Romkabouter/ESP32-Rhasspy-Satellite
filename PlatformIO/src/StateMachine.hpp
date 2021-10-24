@@ -23,6 +23,7 @@ public:
   virtual void react(EndPlayAudioEvent const &) {};
   virtual void react(StreamAudioEvent const &) {
     xEventGroupClearBits(audioGroup, PLAY);
+    Serial.println("Send EndPlayAudioEvent in StreamAudioEvent");
     dispatch(EndPlayAudioEvent());
     xEventGroupSetBits(audioGroup, STREAM);
   };
@@ -32,6 +33,7 @@ public:
   virtual void react(UpdateEvent const &) {};
   virtual void react(PlayBytesEvent const &) {
     xEventGroupClearBits(audioGroup, STREAM);
+    Serial.println("Send BeginPlayAudioEvent in PlayBytesEvent");
     dispatch(BeginPlayAudioEvent());
     xEventGroupSetBits(audioGroup, PLAY);
   };
@@ -474,11 +476,11 @@ void push_i2s_data(const uint8_t *const payload, size_t len)
     {
       if (xEventGroupGetBits(audioGroup) != PLAY)
       {
+        Serial.println("Send PlayBytesEvent");
         send_event(PlayBytesEvent());
       }
       vTaskDelay(pdMS_TO_TICKS(50));
     } while (audioData.isFull());
-    /// Serial.print("."); 
   }
 }
 
@@ -489,7 +491,6 @@ void handle_playBytes(const std::string& topicstr, uint8_t *payload, size_t len,
   // start of message
   if (index == 0)
   {
-   // send_event(BeginPlayAudioEvent());
     message_size = total;
     audioData.clear();
     XT_Wav_Class Message((const uint8_t *)payload);
@@ -513,6 +514,7 @@ void handle_playBytes(const std::string& topicstr, uint8_t *payload, size_t len,
     //At the end, make sure to start play in case the buffer is not full yet
     if (!audioData.isEmpty() && xEventGroupGetBits(audioGroup) != PLAY)
     {
+      Serial.println("Send PlayBytesEvent");
       send_event(PlayBytesEvent());
     }
 
@@ -537,6 +539,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
       if (!err) {
         JsonObject root = doc.as<JsonObject>();
         if (root["siteId"] == config.siteid.c_str()) {
+          Serial.println("Send ErrorEvent from errorTopic");
           send_event(ErrorEvent());
         }
       }
@@ -549,6 +552,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
       if (!err) {
         JsonObject root = doc.as<JsonObject>();
         if (root["siteId"] == config.siteid.c_str()) {
+          Serial.println("Send IdleEvent from sayFinishedTopic");
           send_event(IdleEvent());
         }
       }
@@ -561,6 +565,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
       if (!err) {
         JsonObject root = doc.as<JsonObject>();
         if (root["siteId"] == config.siteid.c_str()) {
+          Serial.println("Send TtsEvent from sayTopic");
           send_event(TtsEvent());
         }
       }
@@ -574,14 +579,17 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
         JsonObject root = doc.as<JsonObject>();
         if (root["siteId"] == config.siteid.c_str() && root.containsKey("reason")) {
           if (root["reason"] == "dialogueSession") {
+              Serial.println("Send ListeningEvent from toggleOff (dialogueSession)");
               send_event(ListeningEvent());
           }
-          // if (root["reason"] == "ttsSay") {
-          //     send_event(TtsEvent());
-          // }
-          // if (root["reason"] == "playAudio") {
-          //     send_event(ListeningEvent());
-          // }
+          if (root["reason"] == "ttsSay") {
+              Serial.println("Send TtsEvent from toggleOff (ttsSay)");
+              send_event(TtsEvent());
+          }
+          if (root["reason"] == "playAudio") {
+              Serial.println("Send ListeningEvent from toggleOff (playAudio)");
+              send_event(ListeningEvent());
+          }
         }
       }
     } else if (topicstr.find("toggleOn") != std::string::npos) {
@@ -593,14 +601,17 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
         JsonObject root = doc.as<JsonObject>();
         if (root["siteId"] == config.siteid.c_str() && root.containsKey("reason")) {
           if (root["reason"] == "dialogueSession") {
+              Serial.println("Send IdleEvent from toggleOn (dialogueSession)");
               send_event(IdleEvent());
           }
-          // if (root["reason"] == "ttsSay") {
-          //     send_event(IdleEvent());
-          // }
-          // if (root["reason"] == "playAudio") {
-          //  //   send_event(IdleEvent());
-          // }
+          if (root["reason"] == "ttsSay") {
+              Serial.println("Send IdleEvent from toggleOn (ttsSay)");
+              send_event(IdleEvent());
+          }
+          if (root["reason"] == "playAudio") {
+              Serial.println("Send IdleEvent from toggleOn (playAudio)");
+             send_event(IdleEvent());
+          }
         }
       }
     }
@@ -784,6 +795,7 @@ void I2Stask(void *p) {
       xSemaphoreGive(wbSemaphore); 
       audioData.clear();
       Serial.println("Done");
+      Serial.println("Send StreamAudioEvent");
       send_event(StreamAudioEvent());
     }
     if (xEventGroupGetBits(audioGroup) == STREAM && !config.mute_input) {     
