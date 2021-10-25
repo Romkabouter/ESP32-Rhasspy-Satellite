@@ -42,6 +42,7 @@ struct Config {
   int hotword_brightness = 15;  
   uint16_t volume = 100;
   int gain = 5;
+  int animation = SOLID;
 };
 const char *configfile = "/config.json"; 
 Config config;
@@ -193,6 +194,11 @@ const std::map<const std::string, String (*)()> processor_values = {
     {"VOLUME",              []() { return String(config.volume); } },
     {"GAIN",                []() { return String(config.gain); } },
     {"SITEID",              []() -> String { return config.siteid.c_str(); } },
+    {"ANIMATIONSUPPORT",    []() -> String { return device->animationSupported() ? "block" : "none"; } },
+    {"ANIM_SOLID",          []() -> String { return (config.animation == SOLID) ? "selected" : ""; } },
+    {"ANIM_RUNNING",        []() -> String { return device->runningSupported() ? (config.animation == RUNNING) ? "selected" : "" : "hidden"; } },
+    {"ANIM_PULSING",        []() -> String { return device->pulsingSupported() ? (config.animation == PULSING) ? "selected" : "" : "hidden"; } },
+    {"ANIM_BLINKING",       []() -> String { return device->blinkingSupported() ? (config.animation == BLINKING) ? "selected" : "" : "hidden"; } },
 };
 
 // this function supplies template variables to the template engine
@@ -252,6 +258,7 @@ void handleFSf ( AsyncWebServerRequest* request, const String& route ) {
                 saveNeeded |= processParam(p, "brightness", config.brightness);
                 saveNeeded |= processParam(p, "hw_brightness", config.hotword_brightness);
                 saveNeeded |= processParam(p, "hotword_detection", config.hotword_detection);
+                saveNeeded |= processParam(p, "animation", config.animation);
                 saveNeeded |= processParam(p, "gain", config.gain);
                 saveNeeded |= processParam(p, "volume", config.volume);
 
@@ -301,6 +308,23 @@ void handleRequest ( AsyncWebServerRequest* request )
     handleFSf ( request, String( "/index.html") ) ;
 }
 
+void initHeader(int readSize, int width, int rate) {
+    strncpy(header.riff_tag, "RIFF", 4);
+    strncpy(header.wave_tag, "WAVE", 4);
+    strncpy(header.fmt_tag, "fmt ", 4);
+    strncpy(header.data_tag, "data", 4);
+
+    header.riff_length = (uint32_t)sizeof(header) + (readSize * width);
+    header.fmt_length = 16;
+    header.audio_format = 1;
+    header.num_channels = 1;
+    header.sample_rate = rate;
+    header.byte_rate = rate * width;
+    header.block_align = width;
+    header.bits_per_sample = width * 8;
+    header.data_length = readSize * width;
+}
+
 void publishDebug(const char* message) {
     Serial.println(message);
     if (DEBUG) {
@@ -336,6 +360,7 @@ void loadConfiguration(const char *filename, Config &config) {
     config.volume = doc.getMember("volume").as<int>();
     device->setVolume(config.volume);
     config.gain = doc.getMember("gain").as<int>();
+    config.animation = doc.getMember("animation").as<int>();
     device->setGain(config.gain);
     audioFrameTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/audioFrame");
     playBytesTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/playBytes/#");
@@ -358,7 +383,7 @@ void saveConfiguration(const char *filename, Config &config) {
         Serial.println(F("Failed to create file"));
         return;
     }
-    StaticJsonDocument<256> doc;
+    StaticJsonDocument<512> doc;
     doc["siteid"] = config.siteid;
     doc["mqtt_host"] = config.mqtt_host;
     doc["mqtt_port"] = config.mqtt_port;
@@ -372,6 +397,7 @@ void saveConfiguration(const char *filename, Config &config) {
     doc["hotword_detection"] = config.hotword_detection;
     doc["volume"] = config.volume;
     doc["gain"] = config.gain;
+    doc["animation"] = config.animation;
     if (serializeJson(doc, file) == 0) {
         Serial.println(F("Failed to write to file"));
     }

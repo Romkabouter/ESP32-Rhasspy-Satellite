@@ -183,6 +183,8 @@ void setup() {
   device->setGain(config.gain);
   device->setVolume(config.volume);
 
+  initHeader(device->readSize, device->width, device->rate);
+
   // ---------------------------------------------------------------------------
   // ArduinoOTA
   // ---------------------------------------------------------------------------

@@ -44,7 +44,8 @@ class MatrixVoice : public Device
 public:
   MatrixVoice();
   void init();
-	void animate(int colors);
+	void animate(int colors, int mode);
+	void animateRunning(int colors);
 	void updateColors(int colors);
 	void updateBrightness(int brightness);
   void muteOutput(bool mute);
@@ -53,6 +54,10 @@ public:
 	bool readAudio(uint8_t *data, size_t size);
   void writeAudio(uint8_t *data, size_t size, size_t *bytes_written);
   void ampOutput(int output);
+  bool animationSupported() { return true; };
+  bool runningSupported() { return true; };
+  bool pulsingSupported() { return true; };
+  bool blinkingSupported() { return true; };
 	int readSize = 512;
 	int writeSize = 1024;
 	int width = 2;
@@ -105,57 +110,24 @@ void MatrixVoice::updateBrightness(int brightness) {
 	MatrixVoice::brightness = brightness * 90 / 100 + 10;
 }
 
-void MatrixVoice::animate(int colors) {
+void MatrixVoice::animate(int colors, int mode) {
+	switch (mode)
+	{
+	case AnimationMode::RUNNING:
+		animateRunning(colors);
+		break;
+	default:
+		break;
+	}
+}
+
+void MatrixVoice::animateRunning(int colors) {
 	currentMillis = millis();
 	if (currentMillis - startMillis > 10) {
-		int r = 0;
-		int g = 0;
-		int b = 0;
-		int w = 0;	
-		switch (colors) {
-			case COLORS_TTS:
-				r = tts_colors[0];
-				g = tts_colors[1];
-				b = tts_colors[2];
-				w = tts_colors[3];		
-			break;
-			case COLORS_ERROR:
-				r = error_colors[0];
-				g = error_colors[1];
-				b = error_colors[2];
-				w = error_colors[3];		
-			break;
-			case COLORS_HOTWORD:
-				r = hotword_colors[0];
-				g = hotword_colors[1];
-				b = hotword_colors[2];
-				w = hotword_colors[3];		
-			break;
-			case COLORS_WIFI_CONNECTED:
-				r = wifi_conn_colors[0];
-				g = wifi_conn_colors[1];
-				b = wifi_conn_colors[2];
-				w = wifi_conn_colors[3];		
-			break;
-			case COLORS_IDLE:
-				r = idle_colors[0];
-				g = idle_colors[1];
-				b = idle_colors[2];
-				w = idle_colors[3];		
-			break;
-			case COLORS_WIFI_DISCONNECTED:
-				r = wifi_disc_colors[0];
-				g = wifi_disc_colors[1];
-				b = wifi_disc_colors[2];
-				w = wifi_disc_colors[3];		
-			break;
-			case COLORS_OTA:
-				r = ota_colors[0];
-				g = ota_colors[1];
-				b = ota_colors[2];
-				w = ota_colors[3];		
-			break;
-		}
+		int r = ColorMap[colors][0];
+		int g = ColorMap[colors][1];
+		int b = ColorMap[colors][2];
+		int w = ColorMap[colors][3];		
 		startMillis = millis();
 		for (int i = 0; i < image1d.leds.size(); i++) {
 			int red = ((i + 1) * brightness / image1d.leds.size()) * r / 100;
@@ -174,54 +146,10 @@ void MatrixVoice::animate(int colors) {
 }
 
 void MatrixVoice::updateColors(int colors) {
-	int r = 0;
-	int g = 0;
-	int b = 0;
-	int w = 0;	
-  switch (colors) {
-    case COLORS_TTS:
-			r = tts_colors[0];
-			g = tts_colors[1];
-			b = tts_colors[2];
-			w = tts_colors[3];		
-    break;
-    case COLORS_ERROR:
-			r = error_colors[0];
-			g = error_colors[1];
-			b = error_colors[2];
-			w = error_colors[3];		
-    break;
-    case COLORS_HOTWORD:
-			r = hotword_colors[0];
-			g = hotword_colors[1];
-			b = hotword_colors[2];
-			w = hotword_colors[3];		
-    break;
-    case COLORS_WIFI_CONNECTED:
-			r = wifi_conn_colors[0];
-			g = wifi_conn_colors[1];
-			b = wifi_conn_colors[2];
-			w = wifi_conn_colors[3];		
-    break;
-    case COLORS_IDLE:
-			r = idle_colors[0];
-			g = idle_colors[1];
-			b = idle_colors[2];
-			w = idle_colors[3];		
-    break;
-    case COLORS_WIFI_DISCONNECTED:
-			r = wifi_disc_colors[0];
-			g = wifi_disc_colors[1];
-			b = wifi_disc_colors[2];
-			w = wifi_disc_colors[3];		
-    break;
-    case COLORS_OTA:
-			r = ota_colors[0];
-			g = ota_colors[1];
-			b = ota_colors[2];
-			w = ota_colors[3];		
-    break;
-  }
+	int r = ColorMap[colors][0];
+	int g = ColorMap[colors][1];
+	int b = ColorMap[colors][2];
+	int w = ColorMap[colors][3];		
 	r = floor(MatrixVoice::brightness * r / 100);
 	r = pgm_read_byte(&gamma8[r]);
 	g = floor(MatrixVoice::brightness * g / 100);
