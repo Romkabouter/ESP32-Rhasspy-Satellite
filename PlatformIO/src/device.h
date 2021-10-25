@@ -45,9 +45,9 @@ enum AmpOut {
 
 enum AnimationMode {
   SOLID = 0,
-  RUNNING = 1,
-  PULSING = 2,
-  BLINKING = 3
+  RUN = 1,
+  PULSE = 2,
+  BLINK = 3
 };
 
 class Device {

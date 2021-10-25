@@ -46,6 +46,8 @@ public:
   void init();
 	void animate(int colors, int mode);
 	void animateRunning(int colors);
+	void animateBlinking(int colors);
+	void animatePulsing(int colors);
 	void updateColors(int colors);
 	void updateBrightness(int brightness);
   void muteOutput(bool mute);
@@ -82,6 +84,7 @@ private:
 	int count = 0;
 	int position = 0;
 	long currentMillis, startMillis;
+	bool ledsOn = true;
 };
 
 MatrixVoice::MatrixVoice()
@@ -113,8 +116,14 @@ void MatrixVoice::updateBrightness(int brightness) {
 void MatrixVoice::animate(int colors, int mode) {
 	switch (mode)
 	{
-	case AnimationMode::RUNNING:
+	case AnimationMode::RUN:
 		animateRunning(colors);
+		break;
+	case AnimationMode::BLINK:
+		animateBlinking(colors);
+		break;
+	case AnimationMode::PULSE:
+		animatePulsing(colors);
 		break;
 	default:
 		break;
@@ -141,6 +150,70 @@ void MatrixVoice::animateRunning(int colors) {
 		}
 		position++;
 		position %= image1d.leds.size();
+		everloop.Write(&image1d);
+	}
+}
+
+void MatrixVoice::animateBlinking(int colors) {
+	currentMillis = millis();
+	if (currentMillis - startMillis > 500) {
+		int r = ColorMap[colors][0];
+		int g = ColorMap[colors][1];
+		int b = ColorMap[colors][2];
+		int w = ColorMap[colors][3];		
+		r = floor(MatrixVoice::brightness * r / 100);
+		r = pgm_read_byte(&gamma8[r]);
+		g = floor(MatrixVoice::brightness * g / 100);
+		g = pgm_read_byte(&gamma8[g]);
+		b = floor(MatrixVoice::brightness * b / 100);
+		b = pgm_read_byte(&gamma8[b]);
+		w = floor(MatrixVoice::brightness * w / 100);
+		w = pgm_read_byte(&gamma8[w]);
+		if (!ledsOn) {
+			r = 0;
+			g = 0;
+			b = 0;
+			w = 0;
+		}
+		startMillis = millis();
+		ledsOn = !ledsOn;
+		for (matrix_hal::LedValue &led : image1d.leds) {
+			led.red = r;
+			led.green = g;
+			led.blue = b;
+			led.white = w;
+		}
+		everloop.Write(&image1d);
+	}
+}
+
+void MatrixVoice::animatePulsing(int colors) {
+	//This is one is crap for now
+	currentMillis = millis();
+	if (currentMillis - startMillis > 10) {
+		int r = ColorMap[colors][0];
+		int g = ColorMap[colors][1];
+		int b = ColorMap[colors][2];
+		int w = ColorMap[colors][3];	
+		position = position < 15 ? 15 : position;
+		position = position > 255 ? 15 : position;
+		b = position;
+		r = floor(b * r / 100);
+		r = pgm_read_byte(&gamma8[r]);
+		g = floor(b * g / 100);
+		g = pgm_read_byte(&gamma8[g]);
+		b = floor(b * b / 100);
+		b = pgm_read_byte(&gamma8[b]);
+		w = floor(b * w / 100);
+		w = pgm_read_byte(&gamma8[w]);
+		startMillis = millis();
+		for (matrix_hal::LedValue &led : image1d.leds) {
+			led.red = r;
+			led.green = g;
+			led.blue = b;
+			led.white = w;
+		}
+		position++;
 		everloop.Write(&image1d);
 	}
 }

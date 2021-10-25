@@ -196,9 +196,9 @@ const std::map<const std::string, String (*)()> processor_values = {
     {"SITEID",              []() -> String { return config.siteid.c_str(); } },
     {"ANIMATIONSUPPORT",    []() -> String { return device->animationSupported() ? "block" : "none"; } },
     {"ANIM_SOLID",          []() -> String { return (config.animation == SOLID) ? "selected" : ""; } },
-    {"ANIM_RUNNING",        []() -> String { return device->runningSupported() ? (config.animation == RUNNING) ? "selected" : "" : "hidden"; } },
-    {"ANIM_PULSING",        []() -> String { return device->pulsingSupported() ? (config.animation == PULSING) ? "selected" : "" : "hidden"; } },
-    {"ANIM_BLINKING",       []() -> String { return device->blinkingSupported() ? (config.animation == BLINKING) ? "selected" : "" : "hidden"; } },
+    {"ANIM_RUNNING",        []() -> String { return device->runningSupported() ? (config.animation == RUN) ? "selected" : "" : "hidden"; } },
+    {"ANIM_PULSING",        []() -> String { return device->pulsingSupported() ? (config.animation == PULSE) ? "selected" : "" : "hidden"; } },
+    {"ANIM_BLINKING",       []() -> String { return device->blinkingSupported() ? (config.animation == BLINK) ? "selected" : "" : "hidden"; } },
 };
 
 // this function supplies template variables to the template engine
