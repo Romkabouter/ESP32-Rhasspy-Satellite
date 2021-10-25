@@ -183,6 +183,8 @@ void setup() {
   device->setGain(config.gain);
   device->setVolume(config.volume);
 
+  initHeader(device->readSize, device->width, device->rate);
+
   // ---------------------------------------------------------------------------
   // ArduinoOTA
   // ---------------------------------------------------------------------------
@@ -191,7 +193,7 @@ void setup() {
   ArduinoOTA
     .onStart([]() {
       Serial.println("Uploading...");
-      send_event(OtaEvent());
+      send_event(UpdateEvent());
     })
     .onEnd([]() {
       Serial.println("\nEnd");
