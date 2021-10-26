@@ -134,23 +134,7 @@ void TAudio::InitI2S() {
 }
 
 void TAudio::updateColors(int colors) {
-  switch (colors) {
-    case COLORS_HOTWORD:
-      strip.ClearTo(RgbColor(RgbwColor(hotword_colors[0],hotword_colors[1],hotword_colors[2],hotword_colors[3])).Dim(brightness));
-    break;
-    case COLORS_WIFI_CONNECTED:
-      strip.ClearTo(RgbColor(RgbwColor(wifi_conn_colors[0],wifi_conn_colors[1],wifi_conn_colors[2],wifi_conn_colors[3])).Dim(brightness));
-    break;
-    case COLORS_IDLE:
-      strip.ClearTo(RgbColor(RgbwColor(idle_colors[0],idle_colors[1],idle_colors[2],idle_colors[3])).Dim(brightness));
-    break;
-    case COLORS_WIFI_DISCONNECTED:
-      strip.ClearTo(RgbColor(RgbwColor(wifi_disc_colors[0],wifi_disc_colors[1],wifi_disc_colors[2],wifi_disc_colors[3])).Dim(brightness));
-    break;
-    case COLORS_OTA:
-      strip.ClearTo(RgbColor(RgbwColor(ota_colors[0],ota_colors[1],ota_colors[2],ota_colors[3])).Dim(brightness));
-    break;
-  }
+  strip.ClearTo(RgbColor(RgbwColor(ColorMap[colors][0],ColorMap[colors][1],ColorMap[colors][2],ColorMap[colors][3])).Dim(brightness));
   strip.Show();
 }
 

@@ -663,6 +663,12 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
           ColorMap[COLORS_OTA][2] = root["update"][2];
           ColorMap[COLORS_OTA][3] = root["update"][3];
         }
+        if (root.containsKey("error")) {
+          ColorMap[COLORS_ERROR][0] = root["error"][0];
+          ColorMap[COLORS_ERROR][1] = root["error"][1];
+          ColorMap[COLORS_ERROR][2] = root["error"][2];
+          ColorMap[COLORS_ERROR][3] = root["error"][3];
+        }
         if (saveNeeded) {
           saveConfiguration(configfile, config);
         }

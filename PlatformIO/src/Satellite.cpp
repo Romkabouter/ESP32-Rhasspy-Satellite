@@ -1,13 +1,12 @@
 /* ************************************************************************* *
-   Matrix Voice Audio Streamer
+   ESP32 Rhasspy Satellite
 
-   This program is written to be a streaming audio server running on the Matrix
-   Voice. This is typically used for Rhasspy.
+   This program is written to be a streaming audio microphone for Rhasspy.
    See https://rhasspy.readthedocs.io/en/latest/ for more information
 
    Author:  Paul Romkes
-   Date:    Januari 2021
-   Version: 7.0
+   Date:    October 2021
+   Version: 7.8
 
    Changelog:
    ==========
@@ -101,6 +100,8 @@
     - Added ESP32_POE_ISO and TAUDIO
     - Added animation function, work in progress
     - Added Speaking state for animation preparation (works for matrixvoice)
+   v7.8
+    - Added animations during audio playback, every device has those animation defaulted to not supported
 
 * ************************************************************************ */
 
