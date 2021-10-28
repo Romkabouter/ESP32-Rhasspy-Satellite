@@ -496,8 +496,12 @@ void handle_playBytes(const std::string& topicstr, uint8_t *payload, size_t len,
 
     Serial.printf("Samplerate: %d, Channels: %d, Format: %d, Bits per Sample: %d, Start: %d\r\n", sampleRate, numChannels, (int)Message.Format, bitDepth, offset);
     queueDelay = (sampleRate * numChannels * bitDepth) / 1000;
-    //delay *= 2;
-    //Serial.printf("Delay %d\n", (int)queueDelay);
+    streamingBytes = false;
+    endStream = true;
+    if (topicstr.find("playBytesStreaming") != std::string::npos) {
+      streamingBytes = true;
+      endStream = false;
+    }
   }
 
   push_i2s_data((uint8_t *)&payload[offset], len - offset);
@@ -514,6 +518,10 @@ void handle_playBytes(const std::string& topicstr, uint8_t *payload, size_t len,
 
     std::vector<std::string> topicparts = explode("/", topicstr);
     finishedMsg = "{\"id\":\"" + topicparts[4] + "\",\"siteId\":\"" + config.siteid + "\",\"sessionId\":null}";
+    if (topicstr.find("playBytesStreaming") != std::string::npos) {
+      if (topicstr.substr(strlen(topicstr.c_str())-2, 2) == "/1") {
+        endStream = true;
+      }
   }
 }
 
@@ -550,30 +558,6 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
           send_event(IdleEvent());
         }
       }
-    } else if (topicstr.find("playBytes") != std::string::npos || topicstr.find("playBytesStreaming") != std::string::npos) {  
-      std::vector<std::string> topicparts = explode("/", topicstr);
-      if (!audioData.isEmpty() && xEventGroupGetBits(audioGroup) != PLAY) {
-        send_event(PlayAudioEvent());
-      }      
-      if (topicstr.find("playBytesStreaming") != std::string::npos) {
-          streamingBytes = true;
-          // Get the ID from the topic
-          finishedMsg = "{\"id\":\"" + topicparts[4] + "\",\"siteId\":\"" + config.siteid + "\"}";
-          if (topicstr.substr(strlen(topicstr.c_str())-3, 3) == "0/0") {
-              endStream = false;
-          } else if (topicstr.substr(strlen(topicstr.c_str())-2, 2) == "/1") {
-              endStream = true;
-          }
-      } else {
-          // Get the ID from the topic   
-          finishedMsg = "{\"id\":\"" + topicparts[4] + "\",\"siteId\":\"" + config.siteid + "\",\"sessionId\":\"" + sessionid + "\" }";
-          streamingBytes = false;
-      }
-      for (int i = 0; i < len; i++) {
-        while (audioData.isFull()) {
-          Serial.println("Pausing");
-          asyncClient.pause();
-          vTaskDelay(5 / portTICK_PERIOD_MS);
     } else if (topicstr.find(sayTopic.c_str()) != std::string::npos)
     {
       std::string payloadstr(payload);
@@ -633,7 +617,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
         }
       }
     }
-    else if (topicstr.find("playBytes") != std::string::npos)
+    else if (topicstr.find("playBytes") != std::string::npos || topicstr.find("playBytesStreaming") != std::string::npos)
     {
       handle_playBytes(topicstr, (uint8_t*)payload, len, index, total);
     } else if (topicstr.find(ledTopic.c_str()) != std::string::npos) {
@@ -760,7 +744,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
     }
   } else {
     // len + index < total ==> partial message
-    if (topicstr.find("playBytes") != std::string::npos)
+    if (topicstr.find("playBytes") != std::string::npos || topicstr.find("playBytesStreaming") != std::string::npos)
     {
       handle_playBytes(topicstr, (uint8_t*)payload, len, index, total);
     }
@@ -821,7 +805,13 @@ void I2Stask(void *p) {
           }
         }
       }
-      asyncClient.publish(playFinishedTopic.c_str(), 0, false, finishedMsg.c_str());
+      if (streamingBytes) {
+        if (endStream) {
+          asyncClient.publish(streamFinishedTopic.c_str(), 0, false, finishedMsg.c_str());
+        }
+      } else {
+        asyncClient.publish(playFinishedTopic.c_str(), 0, false, finishedMsg.c_str());
+      }      
       xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
       device->muteOutput(true);
       xSemaphoreGive(wbSemaphore); 
