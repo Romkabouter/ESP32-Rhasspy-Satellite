@@ -17,8 +17,8 @@ class M5AtomEcho : public Device
 public:
   M5AtomEcho();
   void init();
-	void animate(int colors, int mode);
-	void animateBlinking(int colors);
+  void animate(int colors, int mode);
+  void animateBlinking(int colors);
   void animatePulsing(int colors);
   void updateColors(int colors);
   void updateBrightness(int brightness);
@@ -35,8 +35,8 @@ public:
 
 private:
   void InitI2SSpeakerOrMic(int mode);
-	long currentMillis, startMillis;
-	bool ledsOn = true;
+  long currentMillis, startMillis;
+  bool ledsOn = true;
   bool directionDown = false;
   int brightness, pulse;
 };
@@ -48,8 +48,8 @@ M5AtomEcho::M5AtomEcho()
 void M5AtomEcho::init()
 {
   M5.begin(true,true,true);
-	currentMillis = millis();
-	startMillis = millis();
+  currentMillis = millis();
+  startMillis = millis();
 };
 
 bool M5AtomEcho::isHotwordDetected() {
@@ -74,39 +74,39 @@ void M5AtomEcho::updateBrightness(int brightness) {
 }
 
 void M5AtomEcho::animate(int colors, int mode) {
-	switch (mode)
-	{
-	case AnimationMode::BLINK:
-		animateBlinking(colors);
-		break;
-	case AnimationMode::PULSE:
-		animatePulsing(colors);
-		break;
-	default:
-		break;
-	}
+  switch (mode)
+  {
+  case AnimationMode::BLINK:
+    animateBlinking(colors);
+    break;
+  case AnimationMode::PULSE:
+    animatePulsing(colors);
+    break;
+  default:
+    break;
+  }
 }
 
 void M5AtomEcho::animatePulsing(int colors) {
-	currentMillis = millis();
-	if (currentMillis - startMillis > 5) {
-		if (M5AtomEcho::pulse > M5AtomEcho::brightness) { directionDown = true; }
-		M5AtomEcho::pulse = directionDown ? M5AtomEcho::pulse - 5 : M5AtomEcho::pulse + 5;
-		if (M5AtomEcho::pulse < 5) { directionDown = false; }
+  currentMillis = millis();
+  if (currentMillis - startMillis > 5) {
+    if (M5AtomEcho::pulse > M5AtomEcho::brightness) { directionDown = true; }
+    M5AtomEcho::pulse = directionDown ? M5AtomEcho::pulse - 5 : M5AtomEcho::pulse + 5;
+    if (M5AtomEcho::pulse < 5) { directionDown = false; }
     startMillis = millis();
     M5.dis.setBrightness(M5AtomEcho::pulse);
-		updateColors(colors);
-	}
+    updateColors(colors);
+  }
 }
 
 void M5AtomEcho::animateBlinking(int colors) {
-	currentMillis = millis();
-	if (currentMillis - startMillis > 300) {
+  currentMillis = millis();
+  if (currentMillis - startMillis > 300) {
     M5.dis.setBrightness(ledsOn ? M5AtomEcho::brightness : 0);
-		ledsOn = !ledsOn;
+    ledsOn = !ledsOn;
     startMillis = millis();
-		updateColors(colors);
-	}
+    updateColors(colors);
+  }
 }
 
 void M5AtomEcho::InitI2SSpeakerOrMic(int mode)
