@@ -73,11 +73,12 @@ private:
   void playBytes(int16_t* input, uint32_t length);
 	void interleave(const int16_t * in_L, const int16_t * in_R, int16_t * out, const size_t num_samples);
 	bool FIFOFlush();
+	void updateColors(int colors, bool usePulse);
 	uint16_t GetFIFOStatus();
 	uint32_t PCM_sampling_frequency = 16000;
 	int fifoSize = 4096;
   int sampleRate, bitDepth, numChannels;
-	int brightness = 15;
+	int brightness, pulse = 15;
 	float sample_time = 1.0 / 16000;
 	uint32_t spiLength = 1024;
   int sleep = int(spiLength * sample_time * 1000);
@@ -85,6 +86,7 @@ private:
 	int position = 0;
 	long currentMillis, startMillis;
 	bool ledsOn = true;
+	bool directionDown = false;
 };
 
 MatrixVoice::MatrixVoice()
@@ -111,6 +113,7 @@ void MatrixVoice::updateBrightness(int brightness) {
 	// all values below 10 is read as 0 in gamma8, we map 0 to 10
 	if (brightness > 100) { brightness = 100; }
 	MatrixVoice::brightness = brightness * 90 / 100 + 10;
+	MatrixVoice::pulse = brightness * 90 / 100 + 10;
 }
 
 void MatrixVoice::animate(int colors, int mode) {
@@ -156,80 +159,38 @@ void MatrixVoice::animateRunning(int colors) {
 
 void MatrixVoice::animateBlinking(int colors) {
 	currentMillis = millis();
-	if (currentMillis - startMillis > 500) {
-		int r = ColorMap[colors][0];
-		int g = ColorMap[colors][1];
-		int b = ColorMap[colors][2];
-		int w = ColorMap[colors][3];		
-		r = floor(MatrixVoice::brightness * r / 100);
-		r = pgm_read_byte(&gamma8[r]);
-		g = floor(MatrixVoice::brightness * g / 100);
-		g = pgm_read_byte(&gamma8[g]);
-		b = floor(MatrixVoice::brightness * b / 100);
-		b = pgm_read_byte(&gamma8[b]);
-		w = floor(MatrixVoice::brightness * w / 100);
-		w = pgm_read_byte(&gamma8[w]);
-		if (!ledsOn) {
-			r = 0;
-			g = 0;
-			b = 0;
-			w = 0;
-		}
-		startMillis = millis();
+	if (currentMillis - startMillis > 300) {
+		MatrixVoice::pulse = ledsOn ? MatrixVoice::brightness : 0;
 		ledsOn = !ledsOn;
-		for (matrix_hal::LedValue &led : image1d.leds) {
-			led.red = r;
-			led.green = g;
-			led.blue = b;
-			led.white = w;
-		}
-		everloop.Write(&image1d);
+		startMillis = millis();
+		updateColors(colors, true);
 	}
 }
 
 void MatrixVoice::animatePulsing(int colors) {
-	//This is one is crap for now
 	currentMillis = millis();
-	if (currentMillis - startMillis > 10) {
-		int r = ColorMap[colors][0];
-		int g = ColorMap[colors][1];
-		int b = ColorMap[colors][2];
-		int w = ColorMap[colors][3];	
-		position = position < 15 ? 15 : position;
-		position = position > 255 ? 15 : position;
-		b = position;
-		r = floor(b * r / 100);
-		r = pgm_read_byte(&gamma8[r]);
-		g = floor(b * g / 100);
-		g = pgm_read_byte(&gamma8[g]);
-		b = floor(b * b / 100);
-		b = pgm_read_byte(&gamma8[b]);
-		w = floor(b * w / 100);
-		w = pgm_read_byte(&gamma8[w]);
+	if (currentMillis - startMillis > 5) {
+		if (MatrixVoice::pulse > MatrixVoice::brightness) { directionDown = true; }
+		MatrixVoice::pulse = directionDown ? MatrixVoice::pulse - 5 : MatrixVoice::pulse + 5;
+		if (MatrixVoice::pulse < 5) { directionDown = false; }
 		startMillis = millis();
-		for (matrix_hal::LedValue &led : image1d.leds) {
-			led.red = r;
-			led.green = g;
-			led.blue = b;
-			led.white = w;
-		}
-		position++;
-		everloop.Write(&image1d);
+		updateColors(colors, true);
 	}
 }
 
-void MatrixVoice::updateColors(int colors) {
+void MatrixVoice::updateColors(int colors, bool usePulse) {
 	int r = ColorMap[colors][0];
 	int g = ColorMap[colors][1];
 	int b = ColorMap[colors][2];
 	int w = ColorMap[colors][3];		
-	r = floor(MatrixVoice::brightness * r / 100);
+	int brightness = usePulse ? MatrixVoice::pulse : MatrixVoice::brightness;
+	r = floor(brightness * r / 100);
 	r = pgm_read_byte(&gamma8[r]);
-	g = floor(MatrixVoice::brightness * g / 100);
+	g = floor(brightness * g / 100);
 	g = pgm_read_byte(&gamma8[g]);
-	b = floor(MatrixVoice::brightness * b / 100);
+	b = floor(brightness * b / 100);
 	b = pgm_read_byte(&gamma8[b]);
-	w = floor(MatrixVoice::brightness * w / 100);
+	w = floor(brightness * w / 100);
 	w = pgm_read_byte(&gamma8[w]);
 	for (matrix_hal::LedValue &led : image1d.leds) {
 		led.red = r;
@@ -238,6 +199,10 @@ void MatrixVoice::updateColors(int colors) {
 		led.white = w;
 	}
 	everloop.Write(&image1d);
+}
+
+void MatrixVoice::updateColors(int colors) {
+	updateColors(colors, false);
 }
 
 void MatrixVoice::muteOutput(bool mute) {
