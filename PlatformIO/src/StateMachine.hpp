@@ -158,6 +158,13 @@ class Idle : public StateMachine
       std::string message = "{\"init\":{\"type\":\"action\",\"canBeEnqueued\": false},\"siteId\":\"" + std::string(config.siteid) + "\"}";
       asyncClient.publish("hermes/dialogueManager/startSession", 0, false, message.c_str());
     }
+    if (configChanged) {
+      configChanged = false;
+      device->updateBrightness(config.brightness);
+      xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
+      device->updateColors(current_colors);
+      xSemaphoreGive(wbSemaphore);
+    }
   }
 
   void react(ListeningEvent const &) override { 

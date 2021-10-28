@@ -68,7 +68,8 @@ bool mqttInitialized = false;
 int retryCount = 0;
 int I2SMode = -1;
 bool mqttConnected = false;
-bool DEBUG = true;
+bool DEBUG = false;
+bool configChanged = false;
 
 std::string audioFrameTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/audioFrame");
 std::string playBytesTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/playBytes/#");
@@ -236,6 +237,7 @@ template <typename T> bool processParam(AsyncWebParameter *p, const char* p_name
 void handleFSf ( AsyncWebServerRequest* request, const String& route ) {
     AsyncWebServerResponse *response ;
     bool saveNeeded = false;
+    bool rebootNeeded = false;
 
     if ( route.indexOf ( "index.html" ) >= 0 ) // Index page is in PROGMEM
     {
@@ -247,11 +249,11 @@ void handleFSf ( AsyncWebServerRequest* request, const String& route ) {
                 AsyncWebParameter* p = request->getParam(i);
                 Serial.printf("Parameter %s, value %s\r\n", p->name().c_str(), p->value().c_str());
 
-                saveNeeded |= processParam(p, "siteid", config.siteid);
-                saveNeeded |= processParam(p, "mqtt_host", config.mqtt_host);
-                saveNeeded |= processParam(p, "mqtt_pass", config.mqtt_pass);
-                saveNeeded |= processParam(p, "mqtt_user", config.mqtt_user);
-                saveNeeded |= processParam(p, "mqtt_port", config.mqtt_port);
+                rebootNeeded |= processParam(p, "siteid", config.siteid);
+                rebootNeeded |= processParam(p, "mqtt_host", config.mqtt_host);
+                rebootNeeded |= processParam(p, "mqtt_pass", config.mqtt_pass);
+                rebootNeeded |= processParam(p, "mqtt_user", config.mqtt_user);
+                rebootNeeded |= processParam(p, "mqtt_port", config.mqtt_port);
                 saveNeeded |= processParam(p, "mute_input", config.mute_input);
                 saveNeeded |= processParam(p, "mute_output", config.mute_output);
                 saveNeeded |= processParam(p, "amp_output", config.amp_output);
@@ -277,14 +279,16 @@ void handleFSf ( AsyncWebServerRequest* request, const String& route ) {
                 config.mute_output = false;
                 saveNeeded = true;
             }
-            if (saveNeeded) {
+            if (saveNeeded || rebootNeeded) {
                 Serial.println("Settings changed, saving configuration");
                 saveConfiguration(configfile, config);
+                loadConfiguration(configfile, config);
+                configChanged = true;
             } else {
                 Serial.println("No settings changed");
             }
         }
-        if (saveNeeded) {
+        if (rebootNeeded) {
             response = request->beginResponse_P ( 200, "text/html", "<html><head><title>Rebooting...</title><script>setTimeout(function(){window.location.href = '/';},4000);</script></head><body><h1>Configuration saved, rebooting!</h1></body></html>");
         } else {
             response = request->beginResponse_P ( 200, "text/html", index_html, processor );
@@ -296,7 +300,7 @@ void handleFSf ( AsyncWebServerRequest* request, const String& route ) {
 
     request->send ( response ) ;
     
-    if (saveNeeded) {
+    if (rebootNeeded) {
         Serial.println("Rebooting!");
         ESP.restart();    
     }
