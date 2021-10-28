@@ -522,6 +522,7 @@ void handle_playBytes(const std::string& topicstr, uint8_t *payload, size_t len,
       if (topicstr.substr(strlen(topicstr.c_str())-2, 2) == "/1") {
         endStream = true;
       }
+    }
   }
 }
 
