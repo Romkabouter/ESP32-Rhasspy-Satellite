@@ -17,6 +17,9 @@ class M5AtomEcho : public Device
 public:
   M5AtomEcho();
   void init();
+  void animate(int colors, int mode);
+  void animateBlinking(int colors);
+  void animatePulsing(int colors);
   void updateColors(int colors);
   void updateBrightness(int brightness);
   void setReadMode();
@@ -25,9 +28,17 @@ public:
   bool readAudio(uint8_t *data, size_t size);
   bool isHotwordDetected();
   int numAmpOutConfigurations() { return 1; };
+  bool animationSupported() { return true; };
+  bool runningSupported() { return false; };
+  bool pulsingSupported() { return true; };
+  bool blinkingSupported() { return true; };
 
 private:
   void InitI2SSpeakerOrMic(int mode);
+  long currentMillis, startMillis;
+  bool ledsOn = true;
+  bool directionDown = false;
+  int brightness, pulse;
 };
 
 M5AtomEcho::M5AtomEcho()
@@ -37,6 +48,8 @@ M5AtomEcho::M5AtomEcho()
 void M5AtomEcho::init()
 {
   M5.begin(true,true,true);
+  currentMillis = millis();
+  startMillis = millis();
 };
 
 bool M5AtomEcho::isHotwordDetected() {
@@ -46,27 +59,54 @@ bool M5AtomEcho::isHotwordDetected() {
 
 void M5AtomEcho::updateColors(int colors)
 {
-  switch (colors) {
-    case COLORS_HOTWORD:
-      M5.dis.drawpix(0, CRGB(hotword_colors[1],hotword_colors[0],hotword_colors[2]));
-    break;
-    case COLORS_WIFI_CONNECTED:
-      M5.dis.drawpix(0, CRGB(wifi_conn_colors[0],wifi_conn_colors[1],wifi_conn_colors[2]));
-    break;
-    case COLORS_IDLE:
-      M5.dis.drawpix(0, CRGB(idle_colors[0],idle_colors[1],idle_colors[2]));
-    break;
-    case COLORS_WIFI_DISCONNECTED:
-      M5.dis.drawpix(0, CRGB(wifi_disc_colors[1],wifi_disc_colors[0],wifi_disc_colors[2]));
-    break;
-    case COLORS_OTA:
-      M5.dis.drawpix(0, CRGB(ota_colors[3],ota_colors[3],ota_colors[3]));
-    break;
-  }
+  //Red and Green seem to be switched, we also need to map the white
+  float alpha = 0.6 * (1.0 - (1.0 - ColorMap[colors][3]) * (1.0 - ColorMap[colors][3]));
+  int r = (1.0 - alpha) * ColorMap[colors][1] + alpha;
+  int g = (1.0 - alpha) * ColorMap[colors][0] + alpha;
+  int b = (1.0 - alpha) * ColorMap[colors][2] + alpha;
+  M5.dis.drawpix(0, CRGB(r, g, b));
 };
 
 void M5AtomEcho::updateBrightness(int brightness) {
   M5.dis.setBrightness(brightness);
+  M5AtomEcho::pulse = brightness;
+  M5AtomEcho::brightness = 0;
+}
+
+void M5AtomEcho::animate(int colors, int mode) {
+  switch (mode)
+  {
+  case AnimationMode::BLINK:
+    animateBlinking(colors);
+    break;
+  case AnimationMode::PULSE:
+    animatePulsing(colors);
+    break;
+  default:
+    break;
+  }
+}
+
+void M5AtomEcho::animatePulsing(int colors) {
+  currentMillis = millis();
+  if (currentMillis - startMillis > 5) {
+    if (M5AtomEcho::pulse > M5AtomEcho::brightness) { directionDown = true; }
+    M5AtomEcho::pulse = directionDown ? M5AtomEcho::pulse - 5 : M5AtomEcho::pulse + 5;
+    if (M5AtomEcho::pulse < 5) { directionDown = false; }
+    startMillis = millis();
+    M5.dis.setBrightness(M5AtomEcho::pulse);
+    updateColors(colors);
+  }
+}
+
+void M5AtomEcho::animateBlinking(int colors) {
+  currentMillis = millis();
+  if (currentMillis - startMillis > 300) {
+    M5.dis.setBrightness(ledsOn ? M5AtomEcho::brightness : 0);
+    ledsOn = !ledsOn;
+    startMillis = millis();
+    updateColors(colors);
+  }
 }
 
 void M5AtomEcho::InitI2SSpeakerOrMic(int mode)
