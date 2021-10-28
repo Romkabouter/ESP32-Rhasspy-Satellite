@@ -1,13 +1,12 @@
 /* ************************************************************************* *
-   Matrix Voice Audio Streamer
+   ESP32 Rhasspy Satellite
 
-   This program is written to be a streaming audio server running on the Matrix
-   Voice. This is typically used for Rhasspy.
+   This program is written to be a streaming audio microphone for Rhasspy.
    See https://rhasspy.readthedocs.io/en/latest/ for more information
 
    Author:  Paul Romkes
-   Date:    Januari 2021
-   Version: 7.0
+   Date:    October 2021
+   Version: 7.8
 
    Changelog:
    ==========
@@ -90,12 +89,34 @@
    v7.5.1
     - Saving the configuration now reboots due to instablility issue in disconnecting MQTT
     - Remove hotword method from UI and hard setting to REMOTE until local works again
+   v7.6
+    - Using ESP32 IDF FreeRTOS wrapper for the ringbuffer should fix audio playback
+    - Support for ESP32 A1S 
+   v7.6.1
+    - Adding better logic for saving settings in webUI
+    - Add actual hardware capabilities in webUI
+    - Restructure AudioKit code
+   v7.7
+    - Added ESP32_POE_ISO and TAUDIO
+    - Added animation function, work in progress
+    - Added Speaking state for animation preparation (works for matrixvoice)
+   v7.8
+    - Added animations during audio playback, every device has those animation defaulted to not supported
+    - Implemented for M5 Atom echo and Matrix Voice
 
 * ************************************************************************ */
 
 #include <Arduino.h>
 #include <ArduinoOTA.h>
-#include <WiFi.h>
+#define NETWORK_WIFI 0
+#define NETWORK_ETHERNET 1
+
+#if NETWORK_TYPE == NETWORK_ETHERNET
+  #include <ETH.h>
+#else
+  #include <WiFi.h>
+#endif
+
 #include "device.h"
 
 #define M5ATOMECHO 0
@@ -103,6 +124,13 @@
 #define AUDIOKIT 2
 #define INMP441 3
 #define INMP441MAX98357A 4
+#define ESP32_POE_ISO 5
+#define TAUDIO 6
+
+#ifdef PI_DEVICE_TYPE
+#undef DEVICE_TYPE
+#define DEVICE_TYPE PI_DEVICE_TYPE
+#endif
 
 
 // This is where you can include your device, make sure to create a *device
@@ -122,6 +150,14 @@
 #elif DEVICE_TYPE == INMP441MAX98357A
   #include "devices/Inmp441Max98357a.hpp"
   Inmp441Max98357a *device = new Inmp441Max98357a();
+#elif DEVICE_TYPE == ESP32_POE_ISO
+  #include "devices/Esp32_poe_iso.hpp"
+  Esp32_poe_iso *device = new Esp32_poe_iso();
+#elif DEVICE_TYPE == TAUDIO
+  #include "devices/TAudio.hpp"
+  TAudio *device = new TAudio();
+#else
+  #error DEVICE_TYPE is out of range  
 #endif
 
 #include <General.hpp>
@@ -149,6 +185,8 @@ void setup() {
   device->setGain(config.gain);
   device->setVolume(config.volume);
 
+  initHeader(device->readSize, device->width, device->rate);
+
   // ---------------------------------------------------------------------------
   // ArduinoOTA
   // ---------------------------------------------------------------------------
@@ -157,6 +195,7 @@ void setup() {
   ArduinoOTA
     .onStart([]() {
       Serial.println("Uploading...");
+      send_event(UpdateEvent());
     })
     .onEnd([]() {
       Serial.println("\nEnd");

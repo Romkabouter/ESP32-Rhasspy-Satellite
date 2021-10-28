@@ -78,6 +78,7 @@ input::-moz-focus-inner,input::-moz-focus-outer {border: 0;}
       <select name="amp_output">
         <option value="0" %AMP_OUT_SPEAKERS%>Speakers</option>
         <option value="1" %AMP_OUT_HEADPHONE%>Headphone</option>
+        <option value="2" %AMP_OUT_BOTH%>Headphone+Speakers</option>
       </select>
     </div>
     <div class="input-container">
@@ -100,6 +101,15 @@ input::-moz-focus-inner,input::-moz-focus-outer {border: 0;}
         <input type="range" min="0" max="100" step="5" value="%HW_BRIGHTNESS%" class="range-slider__range" name="hw_brightness">
         <span class="range-slider__value">0</span>
       </div>
+    </div>
+    <div class="input-container" style="display:%ANIMATIONSUPPORT%">
+      <label for="animation">Animation mode:&nbsp;</label>
+      <select name="animation">
+        <option value="0" %ANIM_SOLID%>Solid</option>
+        <option value="1" %ANIM_RUNNING%>Running</option>
+        <option value="2" %ANIM_PULSING%>Pulsing</option>
+        <option value="3" %ANIM_BLINKING%>Blinking</option>
+      </select>
     </div>
     <div class="input-container">
       <label for="gain">Gain:&nbsp;</label>

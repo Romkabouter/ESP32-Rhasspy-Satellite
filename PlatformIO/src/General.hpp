@@ -1,13 +1,22 @@
+#pragma once
+
 #include <tinyfsm.hpp>
 #include <Arduino.h>
-#include <WiFi.h>
+
+#if NETWORK_TYPE == NETWORK_ETHERNET
+    #include <ETH.h>
+#else
+    #include <WiFi.h>
+#endif
+
 #include <AsyncMqttClient.h>
 #include <PubSubClient.h>
-#include "RingBuf.h"
 #include "SPIFFS.h"
 #include "ESPAsyncWebServer.h"
 #include <ArduinoJson.h>
 #include "index_html.h"
+#include "Esp32RingBuffer.h"
+#include <map>
 
 const int PLAY = BIT0;
 const int STREAM = BIT1;
@@ -33,6 +42,7 @@ struct Config {
   int hotword_brightness = 15;  
   uint16_t volume = 100;
   int gain = 5;
+  int animation = SOLID;
 };
 const char *configfile = "/config.json"; 
 Config config;
@@ -62,6 +72,8 @@ bool DEBUG = false;
 bool streamingBytes = false;
 bool endStream = false;
 bool mqttPaused = false;
+bool configChanged = false;
+
 std::string audioFrameTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/audioFrame");
 std::string playBytesTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/playBytes/#");
 std::string playBytesStreamingTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/playBytesStreaming/#");
@@ -72,33 +84,51 @@ std::string audioTopic = config.siteid + std::string("/audio");
 std::string ledTopic = config.siteid + std::string("/led");
 std::string debugTopic = config.siteid + std::string("/debug");
 std::string restartTopic = config.siteid + std::string("/restart");
+std::string sayTopic = "hermes/tts/say";
+std::string sayFinishedTopic = "hermes/tts/sayFinished";
+std::string errorTopic = "hermes/nlu/intentNotRecognized";
 AsyncMqttClient asyncClient; 
 WiFiClient net;
 PubSubClient audioServer(net); 
-RingBuf<uint8_t, 60000> audioData;
+Esp32RingBuffer<uint8_t, uint16_t, (1U << 15)> audioData;
 long message_size = 0;
 int queueDelay = 10;
 int sampleRate = 16000;
 int numChannels = 2;
 int bitDepth = 16;
+int current_colors = COLORS_IDLE;
 static EventGroupHandle_t audioGroup;
 SemaphoreHandle_t wbSemaphore;
 TaskHandle_t i2sHandle;
 
+struct WifiConnected;
 struct WifiDisconnected;
+struct MQTTConnected;
 struct MQTTDisconnected;
-struct HotwordDetected;
+struct Listening;
+struct ListeningPlay;
 struct Idle;
-struct PlayAudio;
+struct IdlePlay;
+struct Tts;
+struct TtsPlay;
+struct Error;
+struct ErrorPlay;
+struct Updating;
 
 struct WifiDisconnectEvent : tinyfsm::Event { };
 struct WifiConnectEvent : tinyfsm::Event { };
 struct MQTTDisconnectedEvent : tinyfsm::Event { };
 struct MQTTConnectedEvent : tinyfsm::Event { };
 struct IdleEvent : tinyfsm::Event { };
+struct TtsEvent : tinyfsm::Event { };
+struct ErrorEvent : tinyfsm::Event { };
+struct UpdateEvent : tinyfsm::Event { };
+struct BeginPlayAudioEvent : tinyfsm::Event {};
+struct EndPlayAudioEvent : tinyfsm::Event {};
 struct StreamAudioEvent : tinyfsm::Event { };
-struct PlayAudioEvent : tinyfsm::Event {};
-struct HotwordDetectedEvent : tinyfsm::Event { };
+struct PlayBytesEvent : tinyfsm::Event {};
+struct ListeningEvent : tinyfsm::Event { };
+struct UpdateConfigurationEvent : tinyfsm::Event { };
 
 void onMqttConnect(bool sessionPresent);
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason);
@@ -151,165 +181,99 @@ XT_Wav_Class::XT_Wav_Class(const unsigned char *WavData) {
     }
 }
 
-uint8_t WaveData[44];
+
+// to add more variables use a C++ lambda, it must either directly return a String, or specify return type ("-> String"), or both 
+const std::map<const std::string, String (*)()> processor_values = {
+    {"MQTT_HOST",           []() -> String { return config.mqtt_host.c_str();} },
+    {"MQTT_PORT",           []() { return String(config.mqtt_port);} },
+    {"MQTT_USER",           []() -> String { return config.mqtt_user.c_str(); } },
+    {"MQTT_PASS",           []() -> String { return config.mqtt_pass.c_str(); } },
+    {"MUTE_INPUT",          []() -> String { return (config.mute_input) ? "checked" : ""; } },
+    {"MUTE_OUTPUT",         []() -> String { return(config.mute_output) ? "checked" : ""; } },
+    {"AMP_OUT_SPEAKERS",    []() -> String { return device->numAmpOutConfigurations() < 1? "hidden" : (config.amp_output == AMP_OUT_SPEAKERS) ? "selected" : ""; } },
+    {"AMP_OUT_HEADPHONE",   []() -> String { return device->numAmpOutConfigurations() < 2? "hidden" : (config.amp_output == AMP_OUT_HEADPHONE) ? "selected" : ""; } },
+    {"AMP_OUT_BOTH",        []() -> String { return device->numAmpOutConfigurations() < 3? "hidden" : (config.amp_output == AMP_OUT_BOTH) ? "selected" : ""; } },
+    {"BRIGHTNESS",          []() { return String(config.brightness); } },
+    {"HW_BRIGHTNESS",       []() { return String(config.hotword_brightness); } },
+    {"HW_LOCAL",            []() -> String { return (config.hotword_detection == HW_LOCAL) ? "selected" : ""; } },
+    {"HW_REMOTE",           []() -> String { return (config.hotword_detection == HW_REMOTE) ? "selected" : ""; } },
+    {"VOLUME",              []() { return String(config.volume); } },
+    {"GAIN",                []() { return String(config.gain); } },
+    {"SITEID",              []() -> String { return config.siteid.c_str(); } },
+    {"ANIMATIONSUPPORT",    []() -> String { return device->animationSupported() ? "block" : "none"; } },
+    {"ANIM_SOLID",          []() -> String { return (config.animation == SOLID) ? "selected" : ""; } },
+    {"ANIM_RUNNING",        []() -> String { return device->runningSupported() ? (config.animation == RUN) ? "selected" : "" : "hidden"; } },
+    {"ANIM_PULSING",        []() -> String { return device->pulsingSupported() ? (config.animation == PULSE) ? "selected" : "" : "hidden"; } },
+    {"ANIM_BLINKING",       []() -> String { return device->blinkingSupported() ? (config.animation == BLINK) ? "selected" : "" : "hidden"; } },
+};
 
 // this function supplies template variables to the template engine
 String processor(const String& var){
-  if(var == "MQTT_HOST"){
-      return String(config.mqtt_host.c_str());
-  }
-  if(var == "MQTT_PORT"){
-      return String(config.mqtt_port);
-  }
-  if(var == "MQTT_USER"){
-      return String(config.mqtt_user.c_str());
-  }
-  if(var == "MQTT_PASS"){
-      return String(config.mqtt_pass.c_str());
-  }
-  if (var == "MUTE_INPUT") {
-      return (config.mute_input) ? "checked" : "";
-  }
-  if (var == "MUTE_OUTPUT") {
-      return (config.mute_output) ? "checked" : "";
-  }
-  if (var == "AMP_OUT_SPEAKERS") {
-      return (config.amp_output == AMP_OUT_SPEAKERS) ? "selected" : "";
-  }
-  if (var == "AMP_OUT_HEADPHONE") {
-      return (config.amp_output == AMP_OUT_HEADPHONE) ? "selected" : "";
-  }
-  if (var == "BRIGHTNESS") {
-      return String(config.brightness);
-  }
-  if (var == "HW_BRIGHTNESS") {
-      return String(config.hotword_brightness);
-  }
-  if (var == "HW_LOCAL") {
-      return (config.hotword_detection == HW_LOCAL) ? "selected" : "";
-  }
-  if (var == "HW_REMOTE") {
-      return (config.hotword_detection == HW_REMOTE) ? "selected" : "";
-  }
-  if (var == "VOLUME") {
-      return String(config.volume);
-  }
-  if (var == "GAIN") {
-      return String(config.gain);
-  }
-  if (var == "SITEID") {
-      return String(config.siteid.c_str());
-  }
-  return String();
+    auto item = processor_values.find(var.c_str());
+    return item != processor_values.end() ? item->second() : String();
+}
+
+// if there is not specialization for the given result type, we assume the html parameter is a integer number and can
+// be casted to the target type
+template <typename T> T processParamConvert(AsyncWebParameter *p) { return (T)p->value().toInt();}
+
+// for bool result type we check if the returned parameter is "on" -> true, otherwise false
+template <> bool processParamConvert(AsyncWebParameter *p) { return p->value().equals("on");}
+
+// for strings we return a string object
+template <> std::string processParamConvert(AsyncWebParameter *p) { return p->value().c_str();}
+
+template <typename T> bool processParam(AsyncWebParameter *p, const char* p_name, T& p_val)
+{
+    bool retval = false;
+    if (p->name() == p_name)
+    {
+        T new_p_val = processParamConvert<T>(p);
+        if (p_val != new_p_val)
+        {
+            Serial.printf("%s changed\n",p_name);
+            p_val = new_p_val;
+            retval = true;
+        }
+    }
+    return retval;
 }
 
 void handleFSf ( AsyncWebServerRequest* request, const String& route ) {
     AsyncWebServerResponse *response ;
+    bool saveNeeded = false;
+    bool rebootNeeded = false;
 
     if ( route.indexOf ( "index.html" ) >= 0 ) // Index page is in PROGMEM
     {
         if (request->method() == HTTP_POST) {
             int params = request->params();
-            bool saveNeeded = false;
             bool mi_found = false;
             bool mo_found = false;
             for(int i=0;i<params;i++){
                 AsyncWebParameter* p = request->getParam(i);
                 Serial.printf("Parameter %s, value %s\r\n", p->name().c_str(), p->value().c_str());
-                if(p->name() == "siteid"){
-                    if (config.siteid != std::string(p->value().c_str())) {
-                        Serial.println("siteID changed");
-                        config.siteid = std::string(p->value().c_str());
-                        saveNeeded = true;
-                    }
-                }
-                if(p->name() == "mqtt_host"){
-                    if (config.mqtt_host != std::string(p->value().c_str())) {
-                        Serial.println("Mqtt host changed");
-                        config.mqtt_host = std::string(p->value().c_str());
-                        saveNeeded = true;
-                    }
-                }
-                if(p->name() == "mqtt_port"){
-                    if (config.mqtt_port != (int)p->value().toInt()) {
-                        Serial.println("Mqtt port changed");
-                        config.mqtt_port = (int)p->value().toInt(); 
-                        saveNeeded = true;
-                    }
-                }
-                if(p->name() == "mqtt_user"){
-                    if (config.mqtt_user != std::string(p->value().c_str())) {
-                        Serial.println("Mqtt user changed");
-                        config.mqtt_user = std::string(p->value().c_str());
-                        saveNeeded = true;
-                    }
-                }
-                if(p->name() == "mqtt_pass"){
-                    if (config.mqtt_pass != std::string(p->value().c_str())) {
-                        Serial.println("Mqtt password changed");
-                        config.mqtt_pass = std::string(p->value().c_str()); 
-                        saveNeeded = true;
-                    }
-                }
-                if(p->name() == "mute_input"){
-                    mi_found = true;
-                    if (!config.mute_input && p->value().equals("on")) {
-                        Serial.println("Mute input changed");
-                        config.mute_input = true;   
-                        saveNeeded = true;
-                    }
-                }
-                if(p->name() == "mute_output"){
-                    mo_found = true;
-                    if (!config.mute_output && p->value().equals("on")) {
-                        Serial.println("Mute output changed");
-                        config.mute_output = true;       
-                        saveNeeded = true;
-                    }
-                }
-                if(p->name() == "amp_output"){
-                    if (config.amp_output != (int)p->value().toInt()) {
-                        Serial.println("Amp output changed");
-                        config.amp_output = (p->value().equals("0")) ? AMP_OUT_SPEAKERS : AMP_OUT_HEADPHONE;       
-                        saveNeeded = true;
-                    }
-                }
-                if(p->name() == "brightness"){
-                    if (config.brightness != (int)p->value().toInt()) {
-                        Serial.println("Brightness changed");
-                        config.brightness = (int)p->value().toInt();      
-                        saveNeeded = true;
-                    }
-                }
-                if(p->name() == "hw_brightness"){
-                    if (config.hotword_brightness != (int)p->value().toInt()) {
-                        Serial.println("Hotword brightness changed");
-                        config.hotword_brightness = (int)p->value().toInt();
-                        saveNeeded = true;
-                    }
-                }
-                if(p->name() == "hotword_detection"){
-                    if (config.hotword_detection != (int)p->value().toInt()) {
-                        Serial.println("Hotword detection changed");
-                        config.hotword_detection = (p->value().equals("0")) ? HW_LOCAL : HW_REMOTE;       
-                        saveNeeded = true;
-                    }
-                }
-                if(p->name() == "gain"){
-                    if (config.gain != (int)p->value().toInt()) {
-                        Serial.println("Gain changed");
-                        config.gain = (int)p->value().toInt();      
-                        saveNeeded = true;
-                    }
-                }
-                if(p->name() == "volume"){
-                    if (config.volume != (int)p->value().toInt()) {
-                        Serial.println("Volume changed");
-                        config.volume = (int)p->value().toInt();      
-                        saveNeeded = true;
-                    }
-                }
+
+                rebootNeeded |= processParam(p, "siteid", config.siteid);
+                rebootNeeded |= processParam(p, "mqtt_host", config.mqtt_host);
+                rebootNeeded |= processParam(p, "mqtt_pass", config.mqtt_pass);
+                rebootNeeded |= processParam(p, "mqtt_user", config.mqtt_user);
+                rebootNeeded |= processParam(p, "mqtt_port", config.mqtt_port);
+                saveNeeded |= processParam(p, "mute_input", config.mute_input);
+                saveNeeded |= processParam(p, "mute_output", config.mute_output);
+                saveNeeded |= processParam(p, "amp_output", config.amp_output);
+                saveNeeded |= processParam(p, "brightness", config.brightness);
+                saveNeeded |= processParam(p, "hw_brightness", config.hotword_brightness);
+                saveNeeded |= processParam(p, "hotword_detection", config.hotword_detection);
+                saveNeeded |= processParam(p, "animation", config.animation);
+                saveNeeded |= processParam(p, "gain", config.gain);
+                saveNeeded |= processParam(p, "volume", config.volume);
+
+                mi_found |= (p->name() == "mute_input");
+                mo_found |= (p->name() == "mute_output");
+
             }
+
             if (!mi_found && config.mute_input) {
                 Serial.println("Mute input not found, value = off");
                 config.mute_input = false;
@@ -320,19 +284,31 @@ void handleFSf ( AsyncWebServerRequest* request, const String& route ) {
                 config.mute_output = false;
                 saveNeeded = true;
             }
-            if (saveNeeded) {
+            if (saveNeeded || rebootNeeded) {
                 Serial.println("Settings changed, saving configuration");
                 saveConfiguration(configfile, config);
+                configChanged = true;
             } else {
                 Serial.println("No settings changed");
             }
         }
-        response = request->beginResponse_P ( 200, "text/html", index_html, processor ) ;
+        if (rebootNeeded) {
+            response = request->beginResponse_P ( 200, "text/html", "<html><head><title>Rebooting...</title><script>setTimeout(function(){window.location.href = '/';},4000);</script></head><body><h1>Configuration saved, rebooting!</h1></body></html>");
+        } else {
+            response = request->beginResponse_P ( 200, "text/html", index_html, processor );
+        }
+
     } else {
         response = request->beginResponse_P ( 200, "text/html", "<html><body>unkown route</body></html>") ;
     }
 
     request->send ( response ) ;
+    
+    if (rebootNeeded) {
+        Serial.println("Rebooting!");
+        ESP.restart();    
+    }
+
 }
 
 void handleRequest ( AsyncWebServerRequest* request )
@@ -340,7 +316,25 @@ void handleRequest ( AsyncWebServerRequest* request )
     handleFSf ( request, String( "/index.html") ) ;
 }
 
+void initHeader(int readSize, int width, int rate) {
+    strncpy(header.riff_tag, "RIFF", 4);
+    strncpy(header.wave_tag, "WAVE", 4);
+    strncpy(header.fmt_tag, "fmt ", 4);
+    strncpy(header.data_tag, "data", 4);
+
+    header.riff_length = (uint32_t)sizeof(header) + (readSize * width);
+    header.fmt_length = 16;
+    header.audio_format = 1;
+    header.num_channels = 1;
+    header.sample_rate = rate;
+    header.byte_rate = rate * width;
+    header.block_align = width;
+    header.bits_per_sample = width * 8;
+    header.data_length = readSize * width;
+}
+
 void publishDebug(const char* message) {
+    Serial.println(message);
     if (DEBUG) {
         asyncClient.publish(debugTopic.c_str(), 0, false, message);
     }
@@ -374,6 +368,7 @@ void loadConfiguration(const char *filename, Config &config) {
     config.volume = doc.getMember("volume").as<int>();
     device->setVolume(config.volume);
     config.gain = doc.getMember("gain").as<int>();
+    config.animation = doc.getMember("animation").as<int>();
     device->setGain(config.gain);
     audioFrameTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/audioFrame");
     playBytesTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/playBytes/#");
@@ -398,7 +393,7 @@ void saveConfiguration(const char *filename, Config &config) {
         Serial.println(F("Failed to create file"));
         return;
     }
-    StaticJsonDocument<256> doc;
+    StaticJsonDocument<512> doc;
     doc["siteid"] = config.siteid;
     doc["mqtt_host"] = config.mqtt_host;
     doc["mqtt_port"] = config.mqtt_port;
@@ -412,10 +407,9 @@ void saveConfiguration(const char *filename, Config &config) {
     doc["hotword_detection"] = config.hotword_detection;
     doc["volume"] = config.volume;
     doc["gain"] = config.gain;
+    doc["animation"] = config.animation;
     if (serializeJson(doc, file) == 0) {
         Serial.println(F("Failed to write to file"));
     }
     file.close();
-    Serial.println("Configuration saved! Rebooting");
-    ESP.restart();    
 }

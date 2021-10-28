@@ -9,6 +9,7 @@ Support for Snips is dropped.
 - Supports multiple devices, and you are welcomed to add more devices. Read futher below as to how.
 - For the Matrix Voice, during first flash a Raspberri Pi is needed, afer that OTA can be used
 - LED Support
+- Various colors per state
 - OTA Updating
 - Dynamic brightness and colors for idle, hotword and disconnected
 - Mute / unmute microphones via MQTT
@@ -18,8 +19,9 @@ Support for Snips is dropped.
 - Adjust gain via MQTT (if supported by device)
 - Reboot device by sending hashed password
 - Configuration possible in browser
-- Audio playback, recommended not higher than 441000 samplerate (see Known Issues)
+- Audio playback, recommended not higher than 16000 samplerate (see Known Issues)
 - Hardware button to start session (if supported by device)
+- Animations when audio is played
 
 ## Getting started
 [Matrix Voice](matrixvoice.md)
@@ -28,13 +30,19 @@ Support for Snips is dropped.
 
 [Audio Kit](audiokit.md)
 
+[INMP441](inmp441.md)
+
+[INMP441MAX98357A](inmp441max98357a.md)
+
+[ESP32-POE-ISO](Esp32-poe-iso.md)
+
 ## MQTT commands
 
 The ESP32 Satellite is subscribed to various topics.
 The topic SITEID/led, where SITEID is the name you have given the device in settings.ini, is used for commands concerning the leds on the device.
 When publishing to this topic, the led colors and brightness can be altered without coding and will be saved to a config file
 
-The message can contain 7 keys:
+The message can contain 10 keys:
 
 - brightness: integer value between 0 and 100 (%)
 - hotword_brightness: integer value between 0 and 100 (%)
@@ -43,6 +51,9 @@ The message can contain 7 keys:
 - update: array of 4 codes: [red,green,blue,white], ranging 0-255
 - wifi_disconnect: array of 4 codes: [red,green,blue,white], ranging 0-255
 - wifi_connect: array of 4 codes: [red,green,blue,white], ranging 0-255
+- tts: array of 4 codes: [red,green,blue,white], ranging 0-255
+- error: array of 4 codes: [red,green,blue,white], ranging 0-255
+- animation: integer value of 0..3 (SOLID, RUNNING, PULSE, BLINK). Only if device supports it.
 
 Example: {"brightness":20,"idle":[240,210,17,0],"hotword":[173,17,240,0]}
 
@@ -58,10 +69,9 @@ Restart the device by publishing {"passwordhash":"yourpasswordhash"} to SITEID/r
 
 ## Known issues
 
-- Uploading sometimes fails or an error is thrown when the uploading is done.
-- Audio playback with sample rate higher than 22050 can lead to hissing/cracking/distortion. Recommended is to use a samplerate of 16000
-- Audio playback with matrix voice is not good, code needs to resample to 44100. WIP
-- Update colors do not work yet
+- Audio playback with sample rate higher than 44100 can lead to jitter due to network. Recommended is to use a samplerate of 16000 or 22050
+- Audio playback with matrix voice is not good, code needs to resample to 44100. 16000 Mono or Stereo should be fine
+- Some settings (like the colors if update via MQTT) do not survive a reboot yet
 
 # Adding devices
 
