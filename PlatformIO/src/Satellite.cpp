@@ -102,6 +102,7 @@
     - Added Speaking state for animation preparation (works for matrixvoice)
    v7.8
     - Added animations during audio playback, every device has those animation defaulted to not supported
+    - Implemented for M5 Atom echo and Matrix Voice
 
 * ************************************************************************ */
 
