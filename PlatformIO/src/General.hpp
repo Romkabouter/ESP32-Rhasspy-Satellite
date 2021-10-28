@@ -282,7 +282,6 @@ void handleFSf ( AsyncWebServerRequest* request, const String& route ) {
             if (saveNeeded || rebootNeeded) {
                 Serial.println("Settings changed, saving configuration");
                 saveConfiguration(configfile, config);
-                loadConfiguration(configfile, config);
                 configChanged = true;
             } else {
                 Serial.println("No settings changed");

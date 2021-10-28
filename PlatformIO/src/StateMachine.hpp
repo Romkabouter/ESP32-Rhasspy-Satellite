@@ -160,10 +160,7 @@ class Idle : public StateMachine
     }
     if (configChanged) {
       configChanged = false;
-      device->updateBrightness(config.brightness);
-      xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
-      device->updateColors(current_colors);
-      xSemaphoreGive(wbSemaphore);
+      transit<Idle>();
     }
   }
 
