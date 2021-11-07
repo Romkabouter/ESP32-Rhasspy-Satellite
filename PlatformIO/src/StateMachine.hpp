@@ -326,13 +326,10 @@ class WifiDisconnected : public StateMachine
     if (i2sHandle == NULL) {
       Serial.println("Creating I2Stask");
       xTaskCreatePinnedToCore(I2Stask, "I2Stask", 30000, NULL, 3, &i2sHandle, 1);
-      // give this task a suffciently high priority to push data in time to DMA
     } else {  
       Serial.println("We already have a I2Stask");
     }
     Serial.println("Enter WifiDisconnected");
-    Serial.printf("Total heap: %d\r\n", ESP.getHeapSize());
-    Serial.printf("Free heap: %d\r\n", ESP.getFreeHeap());
 
     #if NETWORK_TYPE == NETWORK_ETHERNET
       WiFi.onEvent(WiFiEvent);
@@ -469,7 +466,7 @@ void push_i2s_data(const uint8_t *const payload, size_t len)
     {
       if (xEventGroupGetBits(audioGroup) != PLAY)
       {
-        Serial.println("Send PlayBytesEvent");
+        publishDebug("Send PlayBytesEvent");
         send_event(PlayBytesEvent());
       }
       vTaskDelay(pdMS_TO_TICKS(50));
@@ -493,10 +490,10 @@ void handle_playBytes(const std::string& topicstr, uint8_t *payload, size_t len,
     bitDepth = Message.BitsPerSample;
     offset = Message.DataStart;
 
-    Serial.printf("Samplerate: %d, Channels: %d, Format: %d, Bits per Sample: %d, Start: %d\r\n", sampleRate, numChannels, (int)Message.Format, bitDepth, offset);
+    char message[100];
+    snprintf(message, 100, "Samplerate: %d, Channels: %d, Format: %d, Bits per Sample: %d, Start: %d", sampleRate, numChannels, (int)Message.Format, bitDepth, offset);
+    publishDebug(message);
     queueDelay = (sampleRate * numChannels * bitDepth) / 1000;
-    //delay *= 2;
-    //Serial.printf("Delay %d\n", (int)queueDelay);
   }
 
   push_i2s_data((uint8_t *)&payload[offset], len - offset);
@@ -507,7 +504,7 @@ void handle_playBytes(const std::string& topicstr, uint8_t *payload, size_t len,
     //At the end, make sure to start play in case the buffer is not full yet
     if (!audioData.isEmpty() && xEventGroupGetBits(audioGroup) != PLAY)
     {
-      Serial.println("Send PlayBytesEvent");
+      publishDebug("Send PlayBytesEvent");
       send_event(PlayBytesEvent());
     }
 
@@ -741,7 +738,9 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
     }
     else
     {
-      Serial.printf("Unhandled partial message received, topic '%s'\r\n", topic);
+      char message[100];
+      snprintf(message, 100, "Unhandled partial message received, topic '%s'", topic);
+      publishDebug(message);
     }
   }
 }
@@ -774,7 +773,9 @@ void I2Stask(void *p) {
           {
             if (!audioData.pop(data[i]))
             {
-              Serial.printf("Buffer underflow %d %ld\r\n", played + i, message_size);
+              char message[100];
+              snprintf(message, 100, "Buffer underflow %d %ld", played + i, message_size);
+              publishDebug(message);
               vTaskDelay(60);
               bytes_to_write = (i)*2;
             }
@@ -792,7 +793,9 @@ void I2Stask(void *p) {
             bytes_written = bytes_to_write;
           }
             if (bytes_written != bytes_to_write) {
-              Serial.printf("Bytes to write %d, but bytes written %d\r\n",bytes_to_write,bytes_written);
+              char message[100];
+              snprintf(message, 100, "Bytes to write %d, but bytes written %d", bytes_to_write, bytes_written);
+              publishDebug(message);
           }
         }
       }
@@ -801,8 +804,9 @@ void I2Stask(void *p) {
       device->muteOutput(true);
       xSemaphoreGive(wbSemaphore); 
       audioData.clear();
-      Serial.println("Done");
-      Serial.println("Send StreamAudioEvent");
+
+      publishDebug("Done");
+      publishDebug("Send StreamAudioEvent");
       send_event(StreamAudioEvent());
     }
     if (xEventGroupGetBits(audioGroup) == STREAM && !config.mute_input) {     
