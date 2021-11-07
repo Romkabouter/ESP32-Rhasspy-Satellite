@@ -229,10 +229,18 @@ void MatrixVoice::setWriteMode(int sampleRate, int bitDepth, int numChannels) {
   MatrixVoice::numChannels = numChannels;
   FIFOFlush();
   if (sampleRate == 8000 || sampleRate == 16000 || sampleRate == 22050 || sampleRate == 44100 ) {
-    SetPCMSamplingFrequency(FrequencyMap[sampleRate]);
+    if (sampleRate == 44100 && numChannels == 2) {
+      //Strange issue with 44100 stereo. When using 177 that output is very bad
+      //When using 220, output is ok but a tad to slow.
+      SetPCMSamplingFrequency(220);
+    } else {
+      SetPCMSamplingFrequency(FrequencyMap[sampleRate]);
+    }
   }
-  
-  writeSize = 1024;
+
+  sample_time = 1.0 / sampleRate;
+  sleep = int(spiLength * sample_time * 1000);
+  writeSize = spiLength;
   if (numChannels == 1) {
     writeSize = writeSize / sizeof(uint16_t);
   }
@@ -270,18 +278,10 @@ void MatrixVoice::writeAudio(uint8_t *data, size_t inputLength, size_t *bytes_wr
     }
   }
 
-  float sample_time = 1.0 / sampleRate;
-  uint16_t fifo_status = GetFIFOStatus();
-  uint16_t spiSamples[spiLength];
-  for (int i = 0; i < spiLength; i++) {
-    spiSamples[i] = output[i];
-  }
-
-  if (fifo_status > fifoSize * 3 / 4) {
-    int sleep = int(spiLength * sample_time * 1000);
+  if (GetFIFOStatus() > fifoSize * 3 / 4) {
     std::this_thread::sleep_for(std::chrono::milliseconds(sleep));
   }
-  wb.SpiWrite(matrix_hal::kDACBaseAddress, (const uint8_t *)spiSamples, spiLength);
+  wb.SpiWrite(matrix_hal::kDACBaseAddress, (const uint8_t *)output, outputLength);
 }
 
 void MatrixVoice::interleave(const int16_t * in_L, const int16_t * in_R, int16_t * out, const size_t num_samples)
