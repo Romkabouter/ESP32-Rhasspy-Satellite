@@ -69,8 +69,7 @@ Restart the device by publishing {"passwordhash":"yourpasswordhash"} to SITEID/r
 
 ## Known issues
 
-- Audio playback with sample rate higher than 44100 can lead to jitter due to network. Recommended is to use a samplerate of 16000 or 22050
-- Audio playback with matrix voice is not good, code needs to resample to 44100. 16000 Mono or Stereo should be fine
+- Audio playback with sample rate higher than 44100 can lead to jitter due to network. Recommended is to use a samplerate of 16000 or 22050. 44100 stereo plays a bit too slow on the Matrix Voice due to unknown issue
 - Some settings (like the colors if update via MQTT) do not survive a reboot yet
 
 # Adding devices
