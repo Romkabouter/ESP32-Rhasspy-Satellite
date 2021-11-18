@@ -43,6 +43,13 @@ struct Config {
   uint16_t volume = 100;
   int gain = 5;
   int animation = SOLID;
+  std::string idle_color = "#0000FF";
+  std::string hotword_color = "#00FF00";
+  std::string tts_color = "#0000FF";
+  std::string wifi_disc_color = "#FF0000";
+  std::string error_color = "#FF0000";
+  std::string wifi_conn_color = "#0000FF";
+  std::string update_color = "#FFFFFF";
 };
 const char *configfile = "/config.json"; 
 Config config;
@@ -200,6 +207,13 @@ const std::map<const std::string, String (*)()> processor_values = {
     {"ANIM_RUNNING",        []() -> String { return device->runningSupported() ? (config.animation == RUN) ? "selected" : "" : "hidden"; } },
     {"ANIM_PULSING",        []() -> String { return device->pulsingSupported() ? (config.animation == PULSE) ? "selected" : "" : "hidden"; } },
     {"ANIM_BLINKING",       []() -> String { return device->blinkingSupported() ? (config.animation == BLINK) ? "selected" : "" : "hidden"; } },
+    {"COLOR_IDLE",          []() -> String { return config.idle_color.c_str();} },
+    {"COLOR_HOTWORD",       []() -> String { return config.hotword_color.c_str();} },
+    {"COLOR_TTS",           []() -> String { return config.tts_color.c_str();} },
+    {"COLOR_WIFIDISC",      []() -> String { return config.wifi_disc_color.c_str();} },
+    {"COLOR_WIFICONN",      []() -> String { return config.wifi_conn_color.c_str();} },
+    {"COLOR_UPDATE",        []() -> String { return config.update_color.c_str();} },
+    {"COLOR_ERROR",         []() -> String { return config.error_color.c_str();} },
 };
 
 // this function supplies template variables to the template engine
@@ -263,6 +277,13 @@ void handleFSf ( AsyncWebServerRequest* request, const String& route ) {
                 saveNeeded |= processParam(p, "animation", config.animation);
                 saveNeeded |= processParam(p, "gain", config.gain);
                 saveNeeded |= processParam(p, "volume", config.volume);
+                saveNeeded |= processParam(p, "idle_color", config.idle_color);
+                saveNeeded |= processParam(p, "hotword_color", config.hotword_color);
+                saveNeeded |= processParam(p, "tts_color", config.tts_color);
+                saveNeeded |= processParam(p, "wifi_disc_color", config.wifi_disc_color);
+                saveNeeded |= processParam(p, "error_color", config.error_color);
+                saveNeeded |= processParam(p, "wifi_conn_color", config.wifi_conn_color);
+                saveNeeded |= processParam(p, "update_color", config.update_color);
 
                 mi_found |= (p->name() == "mute_input");
                 mo_found |= (p->name() == "mute_output");
@@ -364,6 +385,18 @@ void loadConfiguration(const char *filename, Config &config) {
     device->setVolume(config.volume);
     config.gain = doc.getMember("gain").as<int>();
     config.animation = doc.getMember("animation").as<int>();
+    JsonVariant idle = doc.getMember("idle_color"); 
+    if (idle.isNull()) {
+        config.idle_color = ColorMap[COLORS_IDLE][0];
+    } else {
+        config.idle_color = doc.getMember("idle_color").as<std::string>();
+    }
+    config.hotword_color = doc.getMember("hotword_color").as<std::string>();
+    config.tts_color = doc.getMember("tts_color").as<std::string>();
+    config.wifi_disc_color = doc.getMember("wifi_disc_color").as<std::string>();
+    config.error_color = doc.getMember("error_color").as<std::string>();
+    config.wifi_conn_color = doc.getMember("wifi_conn_color").as<std::string>();
+    config.update_color = doc.getMember("update_color").as<std::string>();
     device->setGain(config.gain);
     audioFrameTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/audioFrame");
     playBytesTopic = std::string("hermes/audioServer/") + config.siteid + std::string("/playBytes/#");
@@ -401,6 +434,13 @@ void saveConfiguration(const char *filename, Config &config) {
     doc["volume"] = config.volume;
     doc["gain"] = config.gain;
     doc["animation"] = config.animation;
+    doc["idle_color"] = config.idle_color;
+    doc["hotword_color"] = config.hotword_color;
+    doc["tts_color"] = config.tts_color;
+    doc["wifi_disc_color"] = config.wifi_disc_color;
+    doc["error_color"] = config.error_color;
+    doc["wifi_conn_color"] = config.wifi_conn_color;
+    doc["update_color"] = config.update_color;
     if (serializeJson(doc, file) == 0) {
         Serial.println(F("Failed to write to file"));
     }
