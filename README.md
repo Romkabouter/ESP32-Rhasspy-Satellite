@@ -7,7 +7,7 @@ Support for Snips is dropped.
 ## Features
 
 - Supports multiple devices, and you are welcomed to add more devices. Read futher below as to how.
-- For the Matrix Voice, during first flash a Raspberri Pi is needed, afer that OTA can be used
+- For the Matrix Voice, during first flash a Raspberri Pi is needed, after that OTA can be used
 - LED Support
 - Various colors per state
 - OTA Updating
