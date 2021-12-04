@@ -59,6 +59,12 @@ struct wavfile_header {
     int byte_rate;          // 4
     short block_align;      // 2
     short bits_per_sample;  // 2
+
+    char time[4];
+    int timevalue;
+    int timestamp1;
+    int timestamp2;
+
     char data_tag[4];       // 4
     int data_length;        // 4
 };
@@ -321,8 +327,12 @@ void initHeader(int readSize, int width, int rate) {
     strncpy(header.wave_tag, "WAVE", 4);
     strncpy(header.fmt_tag, "fmt ", 4);
     strncpy(header.data_tag, "data", 4);
+    strncpy(header.time, "time", 4);
+    header.timevalue = 8;
+    header.timestamp1 = 1621840480612;
 
-    header.riff_length = (uint32_t)sizeof(header) + (readSize * width);
+    //header.riff_length = (uint32_t)sizeof(header) + (readSize * width);
+    header.riff_length = 564;//(uint32_t)sizeof(header) + (readSize * width);
     header.fmt_length = 16;
     header.audio_format = 1;
     header.num_channels = 1;
