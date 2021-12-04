@@ -103,6 +103,9 @@
    v7.8
     - Added animations during audio playback, every device has those animation defaulted to not supported
     - Implemented for M5 Atom echo and Matrix Voice
+   v7.8.1
+    - Matrix Voice now supports mono and stereo
+    - Supported samplerates: 8000, 16000, 22050 and 44100 16 bit. 44100S is a bit too slow
 
 * ************************************************************************ */
 

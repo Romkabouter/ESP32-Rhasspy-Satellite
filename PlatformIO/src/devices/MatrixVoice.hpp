@@ -9,9 +9,6 @@
 #include "voice_memory_map.h"
 #include "wishbone_bus.h"
 #include <thread>
-extern "C" {
-  #include "speex_resampler.h"
-}
 
 // This is used to be able to change brightness, while keeping the colors appear
 // the same Called gamma correction, check this
@@ -35,9 +32,6 @@ const uint8_t PROGMEM gamma8[] = {
     180, 182, 184, 186, 189, 191, 193, 196, 198, 200, 203, 205, 208, 210, 213,
     215, 218, 220, 223, 225, 228, 231, 233, 236, 239, 241, 244, 247, 249, 252,
     255};
-
-int err;
-SpeexResamplerState *resampler = speex_resampler_init(1, 16000, 16000, 0, &err);
 
 class MatrixVoice : public Device
 {
@@ -74,19 +68,25 @@ private:
   void interleave(const int16_t * in_L, const int16_t * in_R, int16_t * out, const size_t num_samples);
   bool FIFOFlush();
   void updateColors(int colors, bool usePulse);
+  void SetPCMSamplingFrequency(uint16_t PCM_constant);
   uint16_t GetFIFOStatus();
-  uint32_t PCM_sampling_frequency = 16000;
   int fifoSize = 4096;
   int sampleRate, bitDepth, numChannels;
   int brightness, pulse = 15;
   float sample_time = 1.0 / 16000;
   uint32_t spiLength = 1024;
   int sleep = int(spiLength * sample_time * 1000);
-  int count = 0;
   int position = 0;
   long currentMillis, startMillis;
   bool ledsOn = true;
   bool directionDown = false;
+
+  std::map<int, int> FrequencyMap = {
+      {8000, 975},
+      {16000, 492 },
+      {22050, 355 },
+      {44100, 177 }
+  };
 };
 
 MatrixVoice::MatrixVoice()
@@ -219,30 +219,31 @@ void MatrixVoice::ampOutput(int output) {
   wb.SpiWrite(matrix_hal::kConfBaseAddress+11,(const uint8_t *)(&output), sizeof(uint16_t));
 };
 
+void MatrixVoice::SetPCMSamplingFrequency(uint16_t PCM_constant) {
+  wb.SpiWrite(matrix_hal::kConfBaseAddress+9, (const uint8_t *)(&PCM_constant), sizeof(uint16_t));
+}
+
 void MatrixVoice::setWriteMode(int sampleRate, int bitDepth, int numChannels) {
   MatrixVoice::sampleRate = sampleRate;
   MatrixVoice::bitDepth = bitDepth;
   MatrixVoice::numChannels = numChannels;
   FIFOFlush();
-  speex_resampler_set_rate(resampler,sampleRate,16000);
-  speex_resampler_skip_zeros(resampler);	
-  switch (sampleRate)
-  {
-  case 22050:
-    writeSize = 1411;
-    break;
-  case 44100:
-    writeSize = 2823;
-    break;	
-  default:
-    writeSize = 1024;
-    break;
+  if (sampleRate == 8000 || sampleRate == 16000 || sampleRate == 22050 || sampleRate == 44100 ) {
+    if (sampleRate == 44100 && numChannels == 2) {
+      //Strange issue with 44100 stereo. When using 177 that output is very bad
+      //When using 220, output is ok but a tad to slow.
+      SetPCMSamplingFrequency(220);
+    } else {
+      SetPCMSamplingFrequency(FrequencyMap[sampleRate]);
+    }
   }
+
+  sample_time = 1.0 / sampleRate;
+  sleep = int(spiLength * sample_time * 1000);
+  writeSize = spiLength;
   if (numChannels == 1) {
     writeSize = writeSize / sizeof(uint16_t);
   }
-  count = 0;
-  spiLength = 1024;
 }; 
 
 bool MatrixVoice::readAudio(uint8_t *data, size_t size) {
@@ -265,173 +266,23 @@ void MatrixVoice::writeAudio(uint8_t *data, size_t inputLength, size_t *bytes_wr
     int16_t mono[monoLength]; 
     int16_t stereo[inputLength];
     for (int i = 0; i < inputLength; i += 2) {
-        mono[i/2] = ((data[i] & 0xff) | (data[i + 1] << 8));
+      mono[i/2] = ((data[i] & 0xff) | (data[i + 1] << 8));
     }
     interleave(mono, mono, stereo, monoLength);
     for (int i = 0; i < inputLength; i++) {
-        output[i] = stereo[i];
+      output[i] = stereo[i];
     }
   } else {
     for (int i = 0; i < inputLength; i += 2) {
-        output[i/2] = ((data[i] & 0xff) | (data[i + 1] << 8));
+      output[i/2] = ((data[i] & 0xff) | (data[i + 1] << 8));
     }
   }
 
-  //At this point, we always have a stereo audio message, at whatever rate.
-  //The length of the bytes is dependant on the input sampleRate.
-  //1024 with 16000Hz, 2822 for 441000. (44100/16000) * 1024 = 2822
-  //We might need to resample of the inputRate is higher than 16000
-  uint16_t spiSamples[spiLength];
-  if (sampleRate > 16000) {
-    int16_t resampled[spiLength];
-    //Serial.printf("before resample %d, %d\r\n", spiLength, outputLength);
-    speex_resampler_process_interleaved_int(resampler, output, &outputLength, resampled, &spiLength); 
-    //Serial.printf("after resample %d, %d\r\n", spiLength, outputLength);
-    for (int i = 0; i < spiLength; i++) {
-      spiSamples[i] = resampled[i];
-    }		
-  } else {
-    for (int i = 0; i < spiLength; i++) {
-      spiSamples[i] = output[i];
-    }
-  }
-
-  
   if (GetFIFOStatus() > fifoSize * 3 / 4) {
     std::this_thread::sleep_for(std::chrono::milliseconds(sleep));
   }
-  Serial.printf("Write %d, %d, %d, %d\r\n", spiLength, sizeof(spiSamples), sleep, count);
-  wb.SpiWrite(matrix_hal::kDACBaseAddress, (const uint8_t *)spiSamples, spiLength);
-  count++;
-
-
-  // if (numChannels == 1) {
-  // 	// int16_t mono[size / sizeof(int16_t)]; 
-  // 	// int16_t stereo[size];
-  // 	// for (int i = 0; i < size; i += 2) {
-  // 	// 		mono[i/2] = ((data[i] & 0xff) | (data[i + 1] << 8));
-  // 	// }
-  // 	// interleave(mono, mono, stereo, size / sizeof(int16_t));
-  // 	// if (fifo_status > fifoSize * 3 / 4) {
-  // 	// 	int sleep = int(size * sizeof(int16_t) * sample_time * 1000);
-  // 	// 	std::this_thread::sleep_for(std::chrono::milliseconds(sleep));
-  // 	// }
-  // 	// wb.SpiWrite(matrix_hal::kDACBaseAddress, (const uint8_t *)stereo, size * sizeof(int16_t));
-  // } else {
-    // if (sampleRate == 44100) {
-    // 	uint32_t in_len = size / sizeof(int16_t);
-    // 	uint32_t out_len = 1024 / sizeof(int16_t);
-    // 	int16_t input[in_len];
-    // 	int16_t output[out_len];
-    // 	for (int i = 0; i < size; i += 2) {
-    // 			input[i/2] = ((data[i] & 0xff) | (data[i + 1] << 8));
-    // 	}
-    // 	speex_resampler_process_interleaved_int(resampler, input, &in_len, output, &out_len); 
-    // 	if (fifo_status > fifoSize * 3 / 4) {
-    // 		int sleep = int( ( out_len / sizeof(int16_t)) * sample_time * 1000);
-    // 		std::this_thread::sleep_for(std::chrono::milliseconds(sleep));
-    // 	}
-    // 	wb.SpiWrite(matrix_hal::kDACBaseAddress, (const uint8_t *)output, out_len * sizeof(int16_t));
-    // } else {
-    // 	if (fifo_status > fifoSize * 3 / 4) {
-    // 		int sleep = int(size * sample_time * 1000);
-    // 		std::this_thread::sleep_for(std::chrono::milliseconds(sleep));
-    // 	}
-    // 	wb.SpiWrite(matrix_hal::kDACBaseAddress, (const uint8_t *)data, size);
-    // }
-  //}
+  wb.SpiWrite(matrix_hal::kDACBaseAddress, (const uint8_t *)output, outputLength);
 }
-
-// void MatrixVoice::writeAudio(uint8_t *data, size_t size, size_t *bytes_written) {
-// 	*bytes_written = size;
-// 	float sample_time = 1.0 / 16000;
-// 	uint16_t fifo_status = GetFIFOStatus();
-// 	uint32_t in_len = size / sizeof(int16_t);
-// 	uint32_t out_len = size / sizeof(int16_t);
-// 	int16_t input[in_len];
-// 	int16_t output[out_len];
-// 	int sleep = int(out_len * sizeof(int16_t) * sample_time * 1000);
-// 	for (int i = 0; i < size; i += 2) {
-// 			input[i/2] = ((data[i] & 0xff) | (data[i + 1] << 8));
-// 	}
-
-//   if (numChannels == 1) {
-// 		int16_t mono[size / sizeof(int16_t)]; 
-// 		for (int i = 0; i < size; i += 2) {
-// 				mono[i/2] = ((data[i] & 0xff) | (data[i + 1] << 8));
-// 		}
-// 		interleave(mono, mono, output, size / sizeof(int16_t));
-// 	} else {
-// 		// uint32_t in_len;
-// 		// uint32_t out_len;
-// 		// in_len = size;
-// 		// out_len = 512;
-// 		// int16_t output[out_len];
-// 		// int16_t input[in_len];
-// 		// //Convert 8 bit to 16 bit
-// 		// for (int i = 0; i < size; i += 2) {
-// 		// 		input[i/2] = ((data[i] & 0xff) | (data[i + 1] << 8));
-// 		// }
-// 		// speex_resampler_process_interleaved_int(resampler, input, &in_len, output, &out_len); 
-
-// 		// if (fifo_status > fifoSize * 3 / 4) {
-// 		// 	int sleep = int(size * sample_time * 1000);
-// 		// 	std::this_thread::sleep_for(std::chrono::milliseconds(sleep));
-// 		// }
-// 		// wb.SpiWrite(matrix_hal::kDACBaseAddress, (const uint8_t *)data, size);
-// 	}
-
-// 	if (fifo_status > fifoSize * 3 / 4) {
-// 		std::this_thread::sleep_for(std::chrono::milliseconds(sleep));
-// 	}
-// //	wb.SpiWrite(matrix_hal::kDACBaseAddress, (const uint8_t *)output, out_len * sizeof(int16_t));
-// }
-
-
-// void MatrixVoice::writeAudioStereo1600OK(uint8_t *data, size_t size, size_t *bytes_written) {
-// 	*bytes_written = size;
-// 	float sample_time = 1.0 / 16000;
-// 	int sleep = int(size * sample_time * 1000);
-// 	uint16_t fifo_status = GetFIFOStatus();
-
-// 	if (fifo_status > fifoSize * 3 / 4) {
-// 		std::this_thread::sleep_for(std::chrono::milliseconds(sleep));
-// 	}
-// 	wb.SpiWrite(matrix_hal::kDACBaseAddress, (const uint8_t *)data, size);
-// }
-
-// void MatrixVoice::writeAudio(uint8_t *data, size_t size, size_t *bytes_written) {
-// 	*bytes_written = size;
-// 	uint32_t in_len;
-// 	uint32_t out_len;
-// 	in_len = size / sizeof(int16_t);
-// 	out_len = size * (float)(16000 / sampleRate);
-// 	int16_t output[out_len];
-// 	int16_t input[in_len];
-// 	//Convert 8 bit to 16 bit
-// 	for (int i = 0; i < size; i += 2) {
-// 			input[i/2] = ((data[i] & 0xff) | (data[i + 1] << 8));
-// 	}
-
-// 	if (MatrixVoice::numChannels == 2) {
-// 			speex_resampler_process_interleaved_int(resampler, input, &in_len, output, &out_len); 
-      
-// 			//play it!
-// 			playBytes(output, out_len);      
-// 	} else {
-// 			speex_resampler_process_int(resampler, 0, input, &in_len, output, &out_len);
-// 			int16_t stereo[out_len * sizeof(int16_t)];
-// 			int16_t mono[out_len];
-
-// 			for (int i = 0; i < out_len; i++) {
-// 					mono[i] = output[i];                               
-// 			}
-// 			MatrixVoice::interleave(mono, mono, stereo, out_len);
-
-// 			//play it!                         
-// 			MatrixVoice::playBytes(stereo, out_len * sizeof(int16_t));      
-// 	} 
-// };
 
 void MatrixVoice::interleave(const int16_t * in_L, const int16_t * in_R, int16_t * out, const size_t num_samples)
 {
