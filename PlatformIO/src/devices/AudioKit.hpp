@@ -423,7 +423,7 @@ void AudioKit::ampOutput(int ampOut)
     else
     {
         const uint8_t vol = (out_vol * 63)/100;
-        ac.SetVolumeSpeaker(mute[0]?vol:0);
-        ac.SetVolumeSpeaker(mute[1]?vol:0);
+        ac.SetVolumeSpeaker(mute[0]? 0 : vol);
+        ac.SetVolumeHeadphone(mute[1]? 0 : vol);
     }
 }
