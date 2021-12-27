@@ -264,8 +264,6 @@ void AudioKit::InitI2SSpeakerOrMic(int mode)
 
     err += i2s_driver_install(SPEAKER_I2S_NUMBER, &i2s_config, 0, NULL);
 
-    const i2s_pin_config_t* tx_pin_config_p;
-
     err += i2s_set_pin(SPEAKER_I2S_NUMBER, &(a1s_pinouts[variant].i2s));
 
     if (is_es)
