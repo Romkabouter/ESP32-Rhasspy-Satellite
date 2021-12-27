@@ -9,7 +9,8 @@ int wifi_disc_colors[4] = {255, 0, 0, 0};
 int ota_colors[4] = {0, 0, 0, 255};
 int tts_colors[4] = {173, 17, 240, 0};
 int error_colors[4] = {150, 255, 0, 0};
-enum {
+
+enum StateColors {
   COLORS_HOTWORD = 0,
   COLORS_WIFI_CONNECTED = 1,
   COLORS_WIFI_DISCONNECTED = 2,
@@ -19,7 +20,7 @@ enum {
   COLORS_ERROR = 6
 };
 
-std::map<int, int*> ColorMap = {
+std::map<StateColors, int*> ColorMap = {
     {COLORS_IDLE, idle_colors },
     {COLORS_HOTWORD, hotword_colors },
     {COLORS_WIFI_CONNECTED, wifi_conn_colors },
@@ -58,12 +59,12 @@ class Device {
      //You can init your device here if needed
     virtual void init() {};
      //If your device has leds, override these methods to set the colors and brightness
-    virtual void updateColors(int colors) {};
+    virtual void updateColors(StateColors colors) {};
     //You can create some animation here
-    virtual void animate(int colors, int mode) {};
-    virtual void animateRunning(int colors) {};
-    virtual void animatePulsing(int colors) {};
-    virtual void animateBlinking(int colors) {};
+    virtual void animate(StateColors colors, int mode) {};
+    virtual void animateRunning(StateColors colors) {};
+    virtual void animatePulsing(StateColors colors) {};
+    virtual void animateBlinking(StateColors colors) {};
     //
     virtual void updateBrightness(int brightness) {};
     //It may be needed to switch between read and write, i.e. if the need the same PIN

@@ -38,11 +38,11 @@ class MatrixVoice : public Device
 public:
   MatrixVoice();
   void init();
-  void animate(int colors, int mode);
-  void animateRunning(int colors);
-  void animateBlinking(int colors);
-  void animatePulsing(int colors);
-  void updateColors(int colors);
+  void animate(StateColors colors, int mode);
+  void animateRunning(StateColors colors);
+  void animateBlinking(StateColors colors);
+  void animatePulsing(StateColors colors);
+  void updateColors(StateColors colors);
   void updateBrightness(int brightness);
   void muteOutput(bool mute);
   void setVolume(uint16_t volume);
@@ -67,7 +67,7 @@ private:
   void playBytes(int16_t* input, uint32_t length);
   void interleave(const int16_t * in_L, const int16_t * in_R, int16_t * out, const size_t num_samples);
   bool FIFOFlush();
-  void updateColors(int colors, bool usePulse);
+  void updateColors(StateColors colors, bool usePulse);
   void SetPCMSamplingFrequency(uint16_t PCM_constant);
   uint16_t GetFIFOStatus();
   int fifoSize = 4096;
@@ -116,7 +116,7 @@ void MatrixVoice::updateBrightness(int brightness) {
   MatrixVoice::pulse = brightness * 90 / 100 + 10;
 }
 
-void MatrixVoice::animate(int colors, int mode) {
+void MatrixVoice::animate(StateColors colors, int mode) {
   switch (mode)
   {
   case AnimationMode::RUN:
@@ -133,7 +133,7 @@ void MatrixVoice::animate(int colors, int mode) {
   }
 }
 
-void MatrixVoice::animateRunning(int colors) {
+void MatrixVoice::animateRunning(StateColors colors) {
   currentMillis = millis();
   if (currentMillis - startMillis > 10) {
     int r = ColorMap[colors][0];
@@ -157,7 +157,7 @@ void MatrixVoice::animateRunning(int colors) {
   }
 }
 
-void MatrixVoice::animateBlinking(int colors) {
+void MatrixVoice::animateBlinking(StateColors colors) {
   currentMillis = millis();
   if (currentMillis - startMillis > 300) {
     MatrixVoice::pulse = ledsOn ? MatrixVoice::brightness : 0;
@@ -167,7 +167,7 @@ void MatrixVoice::animateBlinking(int colors) {
   }
 }
 
-void MatrixVoice::animatePulsing(int colors) {
+void MatrixVoice::animatePulsing(StateColors colors) {
   currentMillis = millis();
   if (currentMillis - startMillis > 5) {
     if (MatrixVoice::pulse > MatrixVoice::brightness) { directionDown = true; }
@@ -178,7 +178,7 @@ void MatrixVoice::animatePulsing(int colors) {
   }
 }
 
-void MatrixVoice::updateColors(int colors, bool usePulse) {
+void MatrixVoice::updateColors(StateColors colors, bool usePulse) {
   int r = ColorMap[colors][0];
   int g = ColorMap[colors][1];
   int b = ColorMap[colors][2];
@@ -201,7 +201,7 @@ void MatrixVoice::updateColors(int colors, bool usePulse) {
   everloop.Write(&image1d);
 }
 
-void MatrixVoice::updateColors(int colors) {
+void MatrixVoice::updateColors(StateColors colors) {
   updateColors(colors, false);
 }
 

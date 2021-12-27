@@ -41,7 +41,7 @@ class TAudio : public Device {
   public:
     TAudio();
     void init();
-    void updateColors(int colors);
+    void updateColors(StateColors colors);
     void updateBrightness(int brightness);
     void setReadMode();
     void setWriteMode(int sampleRate, int bitDepth, int numChannels);
@@ -133,7 +133,7 @@ void TAudio::InitI2S() {
   return;
 }
 
-void TAudio::updateColors(int colors) {
+void TAudio::updateColors(StateColors colors) {
   strip.ClearTo(RgbColor(RgbwColor(ColorMap[colors][0],ColorMap[colors][1],ColorMap[colors][2],ColorMap[colors][3])).Dim(brightness));
   strip.Show();
 }
