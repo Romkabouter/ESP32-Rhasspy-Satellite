@@ -11,13 +11,13 @@ int tts_colors[4] = {173, 17, 240, 0};
 int error_colors[4] = {150, 255, 0, 0};
 
 enum StateColors {
-  COLORS_HOTWORD = 0,
-  COLORS_WIFI_CONNECTED = 1,
-  COLORS_WIFI_DISCONNECTED = 2,
-  COLORS_IDLE = 3,
-  COLORS_OTA = 4,
-  COLORS_TTS = 5,
-  COLORS_ERROR = 6
+  COLORS_HOTWORD = 0, // Listening to user input after hotword being detected
+  COLORS_WIFI_CONNECTED = 1, // Wifi is connected. Note, this does not indicate successfull connection to MQTT
+  COLORS_WIFI_DISCONNECTED = 2, // Wifi is not connected
+  COLORS_IDLE = 3, // idle, i.e. Wifi and MQTT connected, device is listening/waiting for activation by hotword and/or key press
+  COLORS_OTA = 4, // over the air update in progress
+  COLORS_TTS = 5, // device is outputting a speech "message" from the TTS
+  COLORS_ERROR = 6 // device has been put in an error state, this is controlled via MQTT error topic
 };
 
 std::map<StateColors, int*> ColorMap = {
@@ -65,8 +65,14 @@ class Device {
     virtual void animateRunning(StateColors colors) {};
     virtual void animatePulsing(StateColors colors) {};
     virtual void animateBlinking(StateColors colors) {};
-    //
+    
+    /**
+     * @brief Set the brightness of the light effects in percent, some devices may not support this
+     * 
+     * @param brightness  value in range from 0 to 100 
+     */
     virtual void updateBrightness(int brightness) {};
+
     //It may be needed to switch between read and write, i.e. if the need the same PIN
     //Override both methods
     virtual void setReadMode() {}; 
