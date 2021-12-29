@@ -111,7 +111,7 @@ class AudioKit : public Device
 public:
     AudioKit();
     void init();
-    void updateColors(int colors);
+    void updateColors(StateColors colors);
 
     void setReadMode();
     void setWriteMode(int sampleRate, int bitDepth, int numChannels);
@@ -122,13 +122,13 @@ public:
     void muteOutput(bool mute);
 
     // ESP-Audio-Kit has speaker and headphone as outputs
-    // TODO
     void ampOutput(int output);
     void setVolume(uint16_t volume);
 
     bool isHotwordDetected();
 
     int numAmpOutConfigurations() { return 3; };
+    void updateBrightness(int brightness);
 
 private:
     void InitI2SSpeakerOrMic(int mode);
@@ -144,7 +144,7 @@ private:
     bool is_mono_stream_stereo_out = false;
     uint16_t key_listen;
 
-    IndicatorLight *indicator_light = new IndicatorLight(LED_STREAM);
+    IndicatorLight *indicator_light = new IndicatorLight(LED_STREAM, true);
 };
 
 AudioKit::AudioKit(){};
@@ -185,9 +185,7 @@ void AudioKit::init()
     key_listen = is_es? ES_KEY_LISTEN: KEY_LISTEN;
 
     // LEDs
-    pinMode(LED_WIFI, OUTPUT);   // active low
-    
-    digitalWrite(LED_STREAM, HIGH);
+    pinMode(LED_WIFI, OUTPUT);   // active low    
     digitalWrite(LED_WIFI, HIGH);
 
     // Enable amplifier
@@ -208,31 +206,46 @@ void AudioKit::init()
  * 
  * @param colors used to indicate state to display, see device.h (enum LedColorState) for values 
  */
-void AudioKit::updateColors(int colors)
+void AudioKit::updateColors(StateColors colors)
 {
-    // turn off LEDs
-    /// digitalWrite(LED_STREAM, HIGH);
-    indicator_light->setState(PULSING);
-
-    digitalWrite(LED_WIFI, HIGH);
-
     switch (colors)
     {
     case COLORS_HOTWORD:
-        /// digitalWrite(LED_STREAM, LOW);
+        // very slow pulsing of LED
+        indicator_light->setPulseTime(4000);
         indicator_light->setState(PULSING);
         break;
     case COLORS_WIFI_CONNECTED:
-        // LED_WIFI is turned off already
+        // quick flashing of LED
+        indicator_light->setDutyPercent(50);
+        indicator_light->setPulseTime(1000);
+        indicator_light->setState(BLINKING);
         break;
     case COLORS_WIFI_DISCONNECTED:
-        digitalWrite(LED_WIFI, LOW);
-        break;
+        // slower flashing of LED
+        indicator_light->setDutyPercent(25);
+        indicator_light->setPulseTime(2000);
+        indicator_light->setState(BLINKING);
+        break;    
     case COLORS_IDLE:
-        // all LEDs are turned off already
+        // all lights are off
+        indicator_light->setState(OFF);
+        break;
+    case COLORS_ERROR:
+        // very quick blinking of LED
+        indicator_light->setDutyPercent(25);
+        indicator_light->setPulseTime(500);
+        indicator_light->setState(BLINKING);
         break;
     case COLORS_OTA:
+        // very quick pulsing of LED
+        indicator_light->setPulseTime(500);
+        indicator_light->setState(PULSING);
         break;
+    case COLORS_TTS:
+        indicator_light->setState(ON);
+        break;
+
     }
 };
 
@@ -476,3 +489,8 @@ void AudioKit::ampOutput(int ampOut)
         ac.SetVolumeHeadphone(mute[1]? 0 : vol);
     }
 }
+
+void AudioKit::updateBrightness(int brightness)
+{
+      indicator_light->setMaxBrightness((brightness*indicator_light->limit)/100);
+} 
