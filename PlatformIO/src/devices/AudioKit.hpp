@@ -8,23 +8,74 @@
 #include <IndicatorLight.h>
 #include "ES8388Control.h"
 
-// I2S pins
-#define CONFIG_I2S_BCK_PIN 27
-#define CONFIG_I2S_LRCK_PIN 26
-#define CONFIG_I2S_DATA_PIN 25
-#define CONFIG_I2S_DATA_IN_PIN 35
+// there are multiple versions of the new ESP32-A1S in the wild
+// with different pinouts for I2S and I2C
+// see https://github.com/Ai-Thinker-Open/ESP32-A1S-AudioKit/issues/26
+//
+// This is the newer version which brings back usable keys 4 to 6: https://github.com/Ai-Thinker-Open/ESP32-A1S-AudioKit/files/7387472/esp32-a1s_v2.3-20210508.1.pdf
 
-#define ES_CONFIG_I2S_BCK_PIN 5
-#define ES_CONFIG_I2S_LRCK_PIN 25
-#define ES_CONFIG_I2S_DATA_PIN 26
-#define ES_CONFIG_I2S_DATA_IN_PIN 35
+enum A1SVariant
+{
+    ES8388_V1 = 0,
+    ES8388_V2,
+    AC101_V1,
+    UNIDENTIFIED
+};
 
-// AC101 I2C pins
-#define IIC_CLK 32
-#define IIC_DATA 33
+struct i2c_pin_config_t
+{
+    int sda;
+    int scl;
+};
 
-#define ES_IIC_CLK 23
-#define ES_IIC_DATA 18
+struct A1S_Pinouts
+{
+    const char* label;
+    A1SVariant variant;
+    i2s_pin_config_t i2s;
+    i2c_pin_config_t i2c;
+};
+
+const A1S_Pinouts a1s_pinouts[] = {
+    // ESP32-A1S initial pinout ES8388
+    {
+        .label = "ES8388 Pinout Variant 1",
+        .variant = A1SVariant::ES8388_V1,
+        .i2s =
+            {
+                .bck_io_num = 5,
+                .ws_io_num = 25,
+                .data_out_num = 26,
+                .data_in_num = 35,
+            },
+            .i2c = { .sda = 18, .scl = 23 }
+    },
+    // ESP32-A1S second pinout ES8388
+    {
+        .label = "ES8388 Pinout Variant 2",
+        .variant = A1SVariant::ES8388_V2,
+        .i2s = {
+            .bck_io_num = 27,
+            .ws_io_num = 25,
+            .data_out_num = 26,
+            .data_in_num = 35,
+        },
+        .i2c = { .sda = 33, .scl = 32 }
+    },
+    // ESP32-A1S AC101 varian
+    {
+        .label = "AC101",
+        .variant = A1SVariant::AC101_V1,
+        .i2s = {
+            .bck_io_num = 27,
+            .ws_io_num = 26,
+            .data_out_num = 25,
+            .data_in_num = 35,
+        },
+        .i2c = { .sda = 33, .scl = 32 }
+    },
+};
+
 
 // amplifier enable pin
 #define GPIO_PA_EN GPIO_NUM_21
@@ -41,9 +92,9 @@
 #define KEY1_GPIO GPIO_NUM_36
 #define KEY2_GPIO GPIO_NUM_13 // may be in use for other purposes, see onboard config switch
 #define KEY3_GPIO GPIO_NUM_19 // also activates LED D4 if pressed
-#define KEY4_GPIO GPIO_NUM_23 // do not use on A1S V2.3 -> I2C ES8388
-#define KEY5_GPIO GPIO_NUM_18 // do not use on A1S V2.3 -> I2C ES8388
-#define KEY6_GPIO GPIO_NUM_5  // do not use on A1S V2.3 -> I2S
+#define KEY4_GPIO GPIO_NUM_23 // do not use on A1S V2.3 with initial pinout -> I2C ES8388
+#define KEY5_GPIO GPIO_NUM_18 // do not use on A1S V2.3 with initial pinout -> I2C ES8388
+#define KEY6_GPIO GPIO_NUM_5  // do not use on A1S V2.3 with initial pinout -> I2S
 
 // alias
 #define KEY_LISTEN KEY3_GPIO
@@ -84,9 +135,11 @@ private:
     AC101 ac;
     ES8388Control es8388;
 
+
     uint8_t out_vol;
     AmpOut out_amp = AMP_OUT_SPEAKERS;
 
+    A1SVariant variant = UNIDENTIFIED;
     bool is_es = false;
     bool is_mono_stream_stereo_out = false;
     uint16_t key_listen;
@@ -98,27 +151,40 @@ AudioKit::AudioKit(){};
 
 void AudioKit::init()
 {
-    Serial.print("Connect to Codec... ");
+    Serial.print("Identifying Codec... ");
 
-    if ((is_es = es8388.begin(ES_IIC_DATA, ES_IIC_CLK)) == true)
+    for (auto pinout: a1s_pinouts)
     {
-        Serial.println("found ES8388Control");
-    }
-    else
-    {
-        Serial.println("looking for AC101...");
-        while (!ac.begin(IIC_DATA, IIC_CLK))
+        Serial.printf("Checking for %s...\r\n", pinout.label);
+        if (pinout.variant != AC101_V1)
         {
-            Serial.printf("failed!\n");
-            delay(1000);
+
+            if ((is_es = es8388.begin(pinout.i2c.sda, pinout.i2c.scl)) == true)
+            {
+            variant = pinout.variant;
+            }
+        } else {
+            if (ac.begin(pinout.i2c.sda, pinout.i2c.scl))
+            {
+                variant = pinout.variant;
+                ac.SetMode(AC101::MODE_ADC_DAC);
+            }
         }
-        ac.SetMode(AC101::MODE_ADC_DAC);
+        // we are done here now
+        if (variant != UNIDENTIFIED) { break; }
+    }
+    if (variant!= UNIDENTIFIED)
+    {
+    Serial.printf("Found audio controller %s at SDA: %d / SCL: %d\n", a1s_pinouts[variant].label, a1s_pinouts[variant].i2c.sda, a1s_pinouts[variant].i2c.scl);
+    } else
+    {
+        Serial.println("No supported controller found, stopping operation!");
+        while (true); // TODO: Better handling for no controller found 
     }
 
     key_listen = is_es? ES_KEY_LISTEN: KEY_LISTEN;
 
     // LEDs
-    pinMode(LED_STREAM, OUTPUT); // active low
     pinMode(LED_WIFI, OUTPUT);   // active low
     
     digitalWrite(LED_STREAM, HIGH);
@@ -146,7 +212,7 @@ void AudioKit::updateColors(int colors)
 {
     // turn off LEDs
     /// digitalWrite(LED_STREAM, HIGH);
-    indicator_light->setState(ON);
+    indicator_light->setState(PULSING);
 
     digitalWrite(LED_WIFI, HIGH);
 
@@ -198,24 +264,7 @@ void AudioKit::InitI2SSpeakerOrMic(int mode)
 
     err += i2s_driver_install(SPEAKER_I2S_NUMBER, &i2s_config, 0, NULL);
 
-    i2s_pin_config_t tx_pin_config;
-
-    if (is_es)
-    {
-        tx_pin_config.bck_io_num = ES_CONFIG_I2S_BCK_PIN;
-        tx_pin_config.ws_io_num = ES_CONFIG_I2S_LRCK_PIN;
-        tx_pin_config.data_out_num = ES_CONFIG_I2S_DATA_PIN;
-        tx_pin_config.data_in_num = ES_CONFIG_I2S_DATA_IN_PIN;
-    }
-    else
-    {
-        tx_pin_config.bck_io_num = CONFIG_I2S_BCK_PIN;
-        tx_pin_config.ws_io_num = CONFIG_I2S_LRCK_PIN;
-        tx_pin_config.data_out_num = CONFIG_I2S_DATA_PIN;
-        tx_pin_config.data_in_num = CONFIG_I2S_DATA_IN_PIN;
-    }
-
-    err += i2s_set_pin(SPEAKER_I2S_NUMBER, &tx_pin_config);
+    err += i2s_set_pin(SPEAKER_I2S_NUMBER, &(a1s_pinouts[variant].i2s));
 
     if (is_es)
     {        

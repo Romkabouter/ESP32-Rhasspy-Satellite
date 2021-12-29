@@ -17,10 +17,10 @@ class M5AtomEcho : public Device
 public:
   M5AtomEcho();
   void init();
-  void animate(int colors, int mode);
-  void animateBlinking(int colors);
-  void animatePulsing(int colors);
-  void updateColors(int colors);
+  void animate(StateColors colors, int mode);
+  void animateBlinking(StateColors colors);
+  void animatePulsing(StateColors colors);
+  void updateColors(StateColors colors);
   void updateBrightness(int brightness);
   void setReadMode();
   void setWriteMode(int sampleRate, int bitDepth, int numChannels);
@@ -57,7 +57,7 @@ bool M5AtomEcho::isHotwordDetected() {
   return M5.Btn.isPressed();
 }
 
-void M5AtomEcho::updateColors(int colors)
+void M5AtomEcho::updateColors(StateColors colors)
 {
   //Red and Green seem to be switched, we also need to map the white
   float alpha = 0.6 * (1.0 - (1.0 - ColorMap[colors][3]) * (1.0 - ColorMap[colors][3]));
@@ -73,7 +73,7 @@ void M5AtomEcho::updateBrightness(int brightness) {
   M5AtomEcho::brightness = 0;
 }
 
-void M5AtomEcho::animate(int colors, int mode) {
+void M5AtomEcho::animate(StateColors colors, int mode) {
   switch (mode)
   {
   case AnimationMode::BLINK:
@@ -87,7 +87,7 @@ void M5AtomEcho::animate(int colors, int mode) {
   }
 }
 
-void M5AtomEcho::animatePulsing(int colors) {
+void M5AtomEcho::animatePulsing(StateColors colors) {
   currentMillis = millis();
   if (currentMillis - startMillis > 5) {
     if (M5AtomEcho::pulse > M5AtomEcho::brightness) { directionDown = true; }
@@ -99,7 +99,7 @@ void M5AtomEcho::animatePulsing(int colors) {
   }
 }
 
-void M5AtomEcho::animateBlinking(int colors) {
+void M5AtomEcho::animateBlinking(StateColors colors) {
   currentMillis = millis();
   if (currentMillis - startMillis > 300) {
     M5.dis.setBrightness(ledsOn ? M5AtomEcho::brightness : 0);

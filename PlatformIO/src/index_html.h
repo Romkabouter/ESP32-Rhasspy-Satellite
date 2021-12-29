@@ -62,16 +62,18 @@ input::-moz-focus-inner,input::-moz-focus-outer {border: 0;}
     <div class="input-container">
       <label for="mute_input">Mute input:&nbsp;</label>
       <label class="switch">
-        <input type="checkbox" name="mute_input" %MUTE_INPUT%>
+        <input type="checkbox" name="mute_input" %MUTE_INPUT% value="on">
         <span class="slider round"></span>
+        <input type="hidden" name="mute_input" value="off"/> 
       </label>
     </div>
     <div class="input-container">
       <label for="mute_output">Mute output:&nbsp;</label>
       <label class="switch">
-        <input type="checkbox" name="mute_output" %MUTE_OUTPUT%>
+        <input type="checkbox" name="mute_output" %MUTE_OUTPUT% value="on">
         <span class="slider round"></span>
       </label>
+      <input type="hidden" name="mute_output" value="off"/> 
     </div>
     <div class="input-container">
       <label for="amp_output">Output to:&nbsp;</label>

@@ -230,5 +230,13 @@ void loop() {
   if (WiFi.isConnected()) {
     ArduinoOTA.handle();
   }
+
+  // unless we are not connected, reconnect now using new settings
+  if (doReconnect && fsm::is_in_state<MQTTDisconnected>() == false && fsm::is_in_state<WifiDisconnected>() == false ) 
+  {
+    send_event(MQTTDisconnectedEvent());
+  }
+  doReconnect = false;
+  
   fsm::run();
 }
