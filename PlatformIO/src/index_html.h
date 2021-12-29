@@ -91,6 +91,13 @@ input::-moz-focus-inner,input::-moz-focus-outer {border: 0;}
       </div>
     </div>
     <div class="input-container">
+      <label for="hotword_detection">Activation:&nbsp;</label>
+      <select name="hotword_detection">
+        <option value="0" %HW_LOCAL%>Key Press Only</option>
+        <option value="1" %HW_REMOTE%>Remote Hotword Detection</option>
+      </select>
+    </div>
+    <div class="input-container">
       <label for="brightness">Brightness:&nbsp;</label>
       <div class="range-slider">
         <input type="range" min="0" max="100" step="5" value="%BRIGHTNESS%" class="range-slider__range" name="brightness">
