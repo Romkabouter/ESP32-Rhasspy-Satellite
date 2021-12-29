@@ -148,7 +148,18 @@ class Idle : public StateMachine
     hotwordDetected = false;
     current_colors = COLORS_IDLE;
     StateMachine::entry();
-    xEventGroupSetBits(audioGroup, STREAM);
+    if (config.hotword_detection == HW_REMOTE)
+    {
+      // start streaming audio to rhasspy for remote
+      // hotword detection
+      xEventGroupSetBits(audioGroup, STREAM);
+    }
+    else 
+    {
+      // stop streaming audio to rhasspy if it
+      // was active before
+      xEventGroupClearBits(audioGroup, STREAM);
+    }
   }
 
   void run(void) override {
@@ -258,6 +269,10 @@ class MQTTDisconnected : public StateMachine {
 
   void entry(void) override {
     Serial.println("Enter MQTTDisconnected");
+    // no longer connected to MQTT, so device is no longer working nominally
+    // => indicate this
+    current_colors = COLORS_WIFI_CONNECTED;
+    device->updateColors(current_colors);
     startMillis = millis();
     currentMillis = millis();
     if (audioServer.connected()) {
@@ -293,6 +308,11 @@ class MQTTDisconnected : public StateMachine {
       }      
     }
   }
+  
+  void react(MQTTDisconnectedEvent const &) {
+    // do nothing, no point in going to MQTTDisconnected if already in this state    
+  };
+
 };
 
 class WifiConnected : public StateMachine
@@ -311,6 +331,11 @@ class WifiConnected : public StateMachine
     ArduinoOTA.begin();
     transit<MQTTDisconnected>();
   }
+
+  void react(MQTTDisconnectedEvent const &) {
+    // do nothing, no point in going to MQTTDisconnected if we have not finished WifiConnected code    
+  };
+
 };
 
 class WifiDisconnected : public StateMachine
@@ -411,6 +436,11 @@ class WifiDisconnected : public StateMachine
     #endif
 
   }
+  
+  void react(MQTTDisconnectedEvent const &) {
+    // do nothing, no point in going to MQTTDisconnected if we have no Wifi    
+  };
+
 };
 
 FSM_INITIAL_STATE(StateMachine, WifiDisconnected)
@@ -819,7 +849,7 @@ void I2Stask(void *p) {
         if (device->readAudio(data, device->readSize * device->width)) {
           // only send audio if hotword_detection is HW_REMOTE.
           //TODO when LOCAL is supported: check if hotword is detected and send audio as well in that case
-          if (config.hotword_detection == HW_REMOTE)
+          // if (config.hotword_detection == HW_REMOTE)
           {
             //Rhasspy needs an audiofeed of 512 bytes+header per message
             //Some devices, like the Matrix Voice do 512 16 bit read in one mic read
@@ -833,17 +863,26 @@ void I2Stask(void *p) {
               audioServer.publish(audioFrameTopic.c_str(),(uint8_t *)payload, sizeof(payload));
             }
           }
-        } else {
-          //Loop, because otherwise this causes timeouts
-          audioServer.loop();
         }
         xSemaphoreGive(wbSemaphore); 
-      } else {
-        xEventGroupClearBits(audioGroup, STREAM);
-        send_event(MQTTDisconnectedEvent());
       }
     }
 
+    // keep the audioServer connection alive, also used to
+    // monitor the MQTT Server, in order to detect
+    // disconnection events
+    if (audioServer.connected()) {
+          //Loop, because otherwise this causes timeouts
+          audioServer.loop();
+    } else
+    {
+      // if we are not already in MQTTDisconnected state, try to get there
+      // this does not affect WifiDisconnected / WifiConnected, as these
+      // ignore our requests in order to establish Wifi connection before
+      // MQTT connection can be established
+      xEventGroupClearBits(audioGroup, STREAM|PLAY); 
+      send_event(MQTTDisconnectedEvent());
+    }
     //Added for stability when neither PLAY or STREAM is set.
     vTaskDelay(10);
 

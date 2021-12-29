@@ -232,7 +232,7 @@ void loop() {
   }
 
   // unless we are not connected, reconnect now using new settings
-  if (doReconnect && fsm::is_in_state<MQTTDisconnected>() == false && fsm::is_in_state<WifiDisconnected>() == false ) 
+  if (doReconnect) 
   {
     send_event(MQTTDisconnectedEvent());
   }
