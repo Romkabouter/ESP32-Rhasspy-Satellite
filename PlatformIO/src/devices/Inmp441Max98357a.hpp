@@ -40,9 +40,10 @@ class Inmp441Max98357a : public Device
     bool readAudio(uint8_t *data, size_t size);
     void setWriteMode(int sampleRate, int bitDepth, int numChannels);
     void writeAudio(uint8_t *data, size_t size, size_t *bytes_written);
-    IndicatorLight *indicator_light = new IndicatorLight(LED_FLASH);
+    IndicatorLight* indicator_light = new IndicatorLight(LED_FLASH);
 
     int numAmpOutConfigurations() { return 1; };
+    void updateBrightness(int brightness);
     
   private:
     char* i2s_read_buff = (char*) calloc(I2S_READ_LEN, sizeof(char));
@@ -126,19 +127,44 @@ void Inmp441Max98357a::init() {
 
 void Inmp441Max98357a::updateColors(int colors)
 {
-    indicator_light->setState(OFF);
     switch (colors)
     {
     case COLORS_HOTWORD:
+        // very slow pulsing of LED
+        indicator_light->setPulseTime(4000);
         indicator_light->setState(PULSING);
+        break;
     case COLORS_WIFI_CONNECTED:
+        // quick flashing of LED
+        indicator_light->setDutyPercent(50);
+        indicator_light->setPulseTime(1000);
+        indicator_light->setState(BLINKING);
         break;
     case COLORS_WIFI_DISCONNECTED:
-        break;
+        // slower flashing of LED
+        indicator_light->setDutyPercent(25);
+        indicator_light->setPulseTime(2000);
+        indicator_light->setState(BLINKING);
+        break;    
     case COLORS_IDLE:
+        // all lights are off
+        indicator_light->setState(OFF);
+        break;
+    case COLORS_ERROR:
+        // very quick blinking of LED
+        indicator_light->setDutyPercent(25);
+        indicator_light->setPulseTime(500);
+        indicator_light->setState(BLINKING);
         break;
     case COLORS_OTA:
+        // very quick pulsing of LED
+        indicator_light->setPulseTime(500);
+        indicator_light->setState(PULSING);
         break;
+    case COLORS_TTS:
+        indicator_light->setState(ON);
+        break;
+
     }
 };
 
@@ -169,3 +195,8 @@ bool Inmp441Max98357a::readAudio(uint8_t *data, size_t size) {
     }
     return true;
 }
+
+void Inmp441Max98357a::updateBrightness(int brightness)
+{
+      indicator_light->setMaxBrightness((brightness*indicator_light->limit)/100);
+} 
