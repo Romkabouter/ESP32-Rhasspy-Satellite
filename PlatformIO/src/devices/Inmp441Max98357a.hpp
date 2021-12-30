@@ -29,7 +29,6 @@
 #define I2S_READ_LEN     512
 // LEDs
 #define LED_FLASH 4
-#define LED 33
 
 class Inmp441Max98357a : public Device
 {
@@ -38,8 +37,10 @@ class Inmp441Max98357a : public Device
     void init();
     void updateColors(int colors);
     bool readAudio(uint8_t *data, size_t size);
+    
     void setWriteMode(int sampleRate, int bitDepth, int numChannels);
     void writeAudio(uint8_t *data, size_t size, size_t *bytes_written);
+
     IndicatorLight* indicator_light = new IndicatorLight(LED_FLASH);
 
     int numAmpOutConfigurations() { return 1; };
