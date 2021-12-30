@@ -9,10 +9,12 @@
 #include "ES8388Control.h"
 
 // there are multiple versions of the new ESP32-A1S in the wild
-// with different pinouts for I2S and I2C
+// with different pinouts for I2S and I2C and different audio controllers
 // see https://github.com/Ai-Thinker-Open/ESP32-A1S-AudioKit/issues/26
 //
-// This is the newer version which brings back usable keys 4 to 6: https://github.com/Ai-Thinker-Open/ESP32-A1S-AudioKit/files/7387472/esp32-a1s_v2.3-20210508.1.pdf
+// Link to the newer version with ES8388 which brings back usable keys 4 to 6: 
+// https://github.com/Ai-Thinker-Open/ESP32-A1S-AudioKit/files/7387472/esp32-a1s_v2.3-20210508.1.pdf
+
 
 enum A1SVariant
 {
@@ -62,7 +64,7 @@ const A1S_Pinouts a1s_pinouts[] = {
         },
         .i2c = { .sda = 33, .scl = 32 }
     },
-    // ESP32-A1S AC101 varian
+    // ESP32-A1S AC101 variant
     {
         .label = "AC101",
         .variant = A1SVariant::AC101_V1,
@@ -82,8 +84,8 @@ const A1S_Pinouts a1s_pinouts[] = {
 #define GPIO_SEL_PA_EN GPIO_SEL_21
 
 // Audiokit LEDs
-#define LED_D4 GPIO_NUM_19
-#define LED_D5 GPIO_NUM_22
+#define LED_D4 GPIO_NUM_22
+#define LED_D5 GPIO_NUM_19
 // alias
 #define LED_WIFI LED_D5
 #define LED_STREAM LED_D4
@@ -97,7 +99,7 @@ const A1S_Pinouts a1s_pinouts[] = {
 #define KEY6_GPIO GPIO_NUM_5  // do not use on A1S V2.3 with initial pinout -> I2S
 
 // alias
-#define KEY_LISTEN KEY3_GPIO
+#define KEY_LISTEN KEY1_GPIO
 #define ES_KEY_LISTEN KEY1_GPIO
 
 //#define KEY_VOL_UP KEYx_GPIO
@@ -127,9 +129,11 @@ public:
 
     bool isHotwordDetected();
 
-    int numAmpOutConfigurations() { return 3; };
+    int numAmpOutConfigurations() { return 3;
+    };
     void updateBrightness(int brightness);
 
+    const i2s_pin_config_t& getPinConfig() { return a1s_pinouts[variant].i2s; }
 private:
     void InitI2SSpeakerOrMic(int mode);
     AC101 ac;
@@ -277,7 +281,7 @@ void AudioKit::InitI2SSpeakerOrMic(int mode)
 
     err += i2s_driver_install(SPEAKER_I2S_NUMBER, &i2s_config, 0, NULL);
 
-    err += i2s_set_pin(SPEAKER_I2S_NUMBER, &(a1s_pinouts[variant].i2s));
+    err += i2s_set_pin(SPEAKER_I2S_NUMBER, &getPinConfig());
 
     if (is_es)
     {        
