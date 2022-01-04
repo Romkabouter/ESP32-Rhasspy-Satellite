@@ -1,0 +1,10 @@
+BasedOnStyle: Microsoft
+UseTab: Never
+IndentWidth: 2
+
+# looks nice, but may cause significant changes when an additional statement is addded
+## AlignConsecutiveAssignments: AcrossEmptyLinesAndComments 
+
+BreakBeforeBraces: Mozilla
+
+SortIncludes: Never
