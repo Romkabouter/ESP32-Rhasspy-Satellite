@@ -258,6 +258,7 @@ class MQTTConnected : public StateMachine {
     asyncClient.subscribe(sayTopic.c_str(), 0);
     asyncClient.subscribe(sayFinishedTopic.c_str(), 0);
     asyncClient.subscribe(errorTopic.c_str(), 0);
+    asyncClient.subscribe(setVolumeTopic.c_str(), 0);
     transit<Idle>();
   }
 };
@@ -757,6 +758,19 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
         JsonObject root = doc.as<JsonObject>();
         if (root.containsKey("debug")) {
           DEBUG = (root["debug"] == "true") ? true : false;
+        }
+      }
+    } else if (topicstr.find(setVolumeTopic.c_str()) != std::string::npos) {
+      std::string payloadstr(payload);
+      StaticJsonDocument<300> doc;
+      DeserializationError err = deserializeJson(doc, payloadstr.c_str());
+      // Check if this is for us
+      if (!err) {
+        JsonObject root = doc.as<JsonObject>();
+        if (root["siteId"] == config.siteid.c_str()) {
+          // volume is between 0 and 1
+          config.volume = (uint16_t)((float)root["volume"] * 100);
+          saveConfiguration(configfile, config);
         }
       }
     }

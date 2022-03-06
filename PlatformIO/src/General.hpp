@@ -82,6 +82,7 @@ std::string restartTopic = config.siteid + std::string("/restart");
 std::string sayTopic = "hermes/tts/say";
 std::string sayFinishedTopic = "hermes/tts/sayFinished";
 std::string errorTopic = "hermes/nlu/intentNotRecognized";
+std::string setVolumeTopic = "rhasspy/audioServer/setVolume";
 AsyncMqttClient asyncClient; 
 WiFiClient net;
 PubSubClient audioServer(net); 
