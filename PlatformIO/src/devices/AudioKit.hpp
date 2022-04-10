@@ -188,6 +188,11 @@ void AudioKit::init()
 
   key_listen = is_es ? ES_KEY_LISTEN : KEY_LISTEN;
 
+  if (!is_es) {
+    // AC101 use 256 byte DMA buffer when writing
+    writeSize = 256 << 2;
+  }
+
   // LEDs
   pinMode(LED_WIFI, OUTPUT); // active low
   digitalWrite(LED_WIFI, HIGH);
