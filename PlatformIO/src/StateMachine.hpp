@@ -49,13 +49,14 @@ public:
   virtual void entry(void) {  
     xEventGroupClearBits(audioGroup, PLAY);
     xEventGroupClearBits(audioGroup, STREAM);
-    device->updateBrightness(config.brightness);
+    device->updateBrightness(hotwordDetected ? config.hotword_brightness : config.brightness);
     xSemaphoreTake(wbSemaphore, portMAX_DELAY); 
     device->updateColors(current_colors);
     xSemaphoreGive(wbSemaphore);
   }; 
   virtual void run(void) {}; 
   void         exit(void) {};
+  bool hotwordDetected = false;
 };
 
 class Tts : public StateMachine
@@ -108,21 +109,25 @@ class Listening : public StateMachine
   void entry(void) override {
     publishDebug("Enter Listening");
     current_colors = COLORS_HOTWORD;
+    hotwordDetected = true;
     StateMachine::entry();
     xEventGroupSetBits(audioGroup, STREAM);
   }
 
   void react(IdleEvent const &) override { 
     publishDebug("IdleEvent in Listening");
+    hotwordDetected = false;
     transit<Idle>();
   }
 
   void react(TtsEvent const &) override { 
+    hotwordDetected = false;
     transit<Tts>();
   }
 
   void react(BeginPlayAudioEvent const &) override { 
     publishDebug("BeginPlayAudioEvent in Listening");
+    hotwordDetected = false;
     transit<ListeningPlay>();
   }
 };
@@ -141,8 +146,6 @@ class ListeningPlay : public StateMachine
 
 class Idle : public StateMachine
 {
-  bool hotwordDetected = false;
-
   void entry(void) override {
     publishDebug("Enter Idle");
     hotwordDetected = false;
