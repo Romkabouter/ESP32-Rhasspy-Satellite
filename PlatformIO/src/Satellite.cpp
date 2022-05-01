@@ -106,6 +106,8 @@
    v7.8.1
     - Matrix Voice now supports mono and stereo
     - Supported samplerates: 8000, 16000, 22050 and 44100 16 bit. 44100S is a bit too slow
+   v7.8.2
+    - Fixed hotword brightness
 
 * ************************************************************************ */
 
