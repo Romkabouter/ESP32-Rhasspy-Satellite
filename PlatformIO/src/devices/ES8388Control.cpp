@@ -244,5 +244,11 @@ bool ES8388Control::identify(int sda, int scl, uint32_t frequency)
 {
   Wire.begin(sda, scl, frequency);
   Wire.beginTransmission(ES8388_ADDR);
-  return Wire.endTransmission() == 0;
+  bool retval = Wire.endTransmission() == 0;
+
+  // cleanup I2C if not detected. required by IDF 4.x to work
+  if (retval == false) {
+    Wire.end();
+  }
+  return retval;
 }
