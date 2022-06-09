@@ -5,6 +5,7 @@
 #include "M5Atom.h"
 #include <driver/i2s.h>
 
+#define CONFIG_I2S_MCK_PIN 0
 #define CONFIG_I2S_BCK_PIN 19
 #define CONFIG_I2S_LRCK_PIN 33
 #define CONFIG_I2S_DATA_PIN 22
@@ -138,6 +139,7 @@ void M5AtomEcho::InitI2SSpeakerOrMic(int mode)
     err += i2s_driver_install(SPEAKER_I2S_NUMBER, &i2s_config, 0, NULL);
     i2s_pin_config_t tx_pin_config;
 
+    tx_pin_config.mck_io_num = CONFIG_I2S_MCK_PIN;
     tx_pin_config.bck_io_num = CONFIG_I2S_BCK_PIN;
     tx_pin_config.ws_io_num = CONFIG_I2S_LRCK_PIN;
     tx_pin_config.data_out_num = CONFIG_I2S_DATA_PIN;
