@@ -496,20 +496,20 @@ void loadConfiguration(const char *filename, Config &config) {
   } else {
     serializeJsonPretty(doc, Serial);
     Serial.println();  
-    config.siteid = doc.getMember("siteid").as<std::string>();
-    config.mqtt_host = doc.getMember("mqtt_host").as<std::string>();
-    config.mqtt_port = doc.getMember("mqtt_port").as<int>();
-    config.mqtt_user = doc.getMember("mqtt_user").as<std::string>();
-    config.mqtt_pass = doc.getMember("mqtt_pass").as<std::string>();
-    config.mute_input = doc.getMember("mute_input").as<int>();
-    config.mute_output = doc.getMember("mute_output").as<int>();
-    config.amp_output = doc.getMember("amp_output").as<int>();
-    config.brightness = doc.getMember("brightness").as<int>();
-    config.hotword_brightness = doc.getMember("hotword_brightness").as<int>();
-    config.hotword_detection = doc.getMember("hotword_detection").as<int>();
-    config.volume = doc.getMember("volume").as<int>();
-    config.gain = doc.getMember("gain").as<int>();
-    config.animation = doc.getMember("animation").as<int>();
+    config.siteid = doc["siteid"].as<std::string>();
+    config.mqtt_host = doc["mqtt_host"].as<std::string>();
+    config.mqtt_port = doc["mqtt_port"].as<int>();
+    config.mqtt_user = doc["mqtt_user"].as<std::string>();
+    config.mqtt_pass = doc["mqtt_pass"].as<std::string>();
+    config.mute_input = doc["mute_input"].as<int>();
+    config.mute_output = doc["mute_output"].as<int>();
+    config.amp_output = doc["amp_output"].as<int>();
+    config.brightness = doc["brightness"].as<int>();
+    config.hotword_brightness = doc["hotword_brightness"].as<int>();
+    config.hotword_detection = doc["hotword_detection"].as<int>();
+    config.volume = doc["volume"].as<int>();
+    config.gain = doc["gain"].as<int>();
+    config.animation = doc["animation"].as<int>();
 
     // apply configuration values
     device->ampOutput(config.amp_output);
