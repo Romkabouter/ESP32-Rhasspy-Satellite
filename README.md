@@ -36,6 +36,8 @@ Support for Snips is dropped.
 
 [ESP32-POE-ISO](Esp32-poe-iso.md)
 
+[INMP441MAX98357AFASTLED](inmp441max98357afastled.md)
+
 ## MQTT commands
 
 The ESP32 Satellite is subscribed to various topics.
