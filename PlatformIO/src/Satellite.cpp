@@ -110,6 +110,11 @@
     - Fixed hotword brightness
    v7.8.3
     - Fix problem with audiokit and IDF 4
+   v7.9
+    - Defines and adds MCK pin to I2S config
+    - pin espressif32 to 4.2.0 due to error
+    - set ArduinoJson to latest fixed version
+    - Added new device - inmp441max98357afastled
 
 * ************************************************************************ */
 
