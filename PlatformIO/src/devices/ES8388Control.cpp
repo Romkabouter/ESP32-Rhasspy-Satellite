@@ -149,6 +149,59 @@ bool ES8388Control::begin(int sda, int scl, uint32_t frequency)
   return res;
 }
 
+// Recommended ALC setting from User Guide
+// DISABLE -> Disable ALC
+// GENERIC -> Generic Mode
+// VOICE   -> Voice Mode
+// MUSIC   -> Music Mode
+bool ES8388Control::setALCmode(alcmodesel_t alc) {
+  bool res = true;
+
+  // generic ALC setting
+  uint8_t ALCSEL = 0b11;       // stereo
+  uint8_t ALCLVL = 0b0011;     //-12db
+  uint8_t MAXGAIN = 0b111;     //+35.5db
+  uint8_t MINGAIN = 0b000;     //-12db
+  uint8_t ALCHLD = 0b0000;     // 0ms
+  uint8_t ALCDCY = 0b0101;     // 13.1ms/step
+  uint8_t ALCATK = 0b0111;     // 13.3ms/step
+  uint8_t ALCMODE = 0b0;       // ALC
+  uint8_t ALCZC = 0b0;         // ZC off
+  uint8_t TIME_OUT = 0b0;      // disable
+  uint8_t NGAT = 0b1;          // enable
+  uint8_t NGTH = 0b10001;      //-51db
+  uint8_t NGG = 0b00;          // hold gain
+  uint8_t WIN_SIZE = 0b00110;  // default
+
+  if (alc == DISABLE)
+    ALCSEL = 0b00;
+  else if (alc == MUSIC) {
+    ALCDCY = 0b1010;  // 420ms/step
+    ALCATK = 0b0110;  // 6.66ms/step
+    NGTH = 0b01011;   // -60db
+  } else if (alc == VOICE) {
+    ALCLVL = 0b1100;  // -4.5db
+    MAXGAIN = 0b101;  // +23.5db
+    MINGAIN = 0b010;  // 0db
+    ALCDCY = 0b0001;  // 820us/step
+    ALCATK = 0b0010;  // 416us/step
+    NGTH = 0b11000;   // -40.5db
+    NGG = 0b01;       // mute ADC
+    res &= write_reg(ES8388_ADDR, ES8388_ADCCONTROL1, 0x77);
+  }
+  res &= write_reg(ES8388_ADDR, ES8388_ADCCONTROL10,
+                   ALCSEL << 6 | MAXGAIN << 3 | MINGAIN);
+  res &= write_reg(ES8388_ADDR, ES8388_ADCCONTROL11,
+                   ALCLVL << 4 | ALCHLD);
+  res &= write_reg(ES8388_ADDR, ES8388_ADCCONTROL12, ALCDCY << 4 | ALCATK);
+  res &= write_reg(ES8388_ADDR, ES8388_ADCCONTROL13,
+                   ALCMODE << 7 | ALCZC << 6 | TIME_OUT << 5 | WIN_SIZE);
+  res &= write_reg(ES8388_ADDR, ES8388_ADCCONTROL14,
+                   NGTH << 3 | NGG << 2 | NGAT);
+
+  return res;
+}
+
 /**
  * @brief (un)mute one of the two outputs or main dac output of the ES8388 by switching of the output register bits.
  * Does not really mute the selected output, causes an attenuation. hence should be used in conjunction with appropriate

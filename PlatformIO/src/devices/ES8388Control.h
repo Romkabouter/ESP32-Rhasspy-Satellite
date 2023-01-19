@@ -1,6 +1,13 @@
 #pragma once
 #include <stdint.h>
 
+typedef enum {
+  DISABLE,  // ALC Disabled
+  GENERIC,  // ALC Generic Mode
+  VOICE,    // ALC Voice Mode
+  MUSIC,    // ALC Music Mode
+} alcmodesel_t;
+
 class ES8388Control
 {
 
@@ -20,4 +27,6 @@ public:
 
   void mute(const ES8388_OUT out, const bool muted);
   void volume(const ES8388_OUT out, const uint8_t vol);
+
+  bool setALCmode(alcmodesel_t alc);
 };
