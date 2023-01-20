@@ -287,6 +287,12 @@ void AudioKit::InitI2SSpeakerOrMic(int mode)
     // ES8388Control requires MCLK output.
     PIN_FUNC_SELECT(PERIPHS_IO_MUX_GPIO0_U, FUNC_GPIO0_CLK_OUT1);
     WRITE_PERI_REG(PIN_CTRL, 0xFFF0);
+
+    if (mode == MODE_MIC) {
+      es8388.setALCmode(VOICE);
+    } else {
+      es8388.setALCmode(DISABLE);
+    }
   }
   return;
 }
