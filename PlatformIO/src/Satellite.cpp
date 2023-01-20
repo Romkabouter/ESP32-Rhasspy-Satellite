@@ -115,6 +115,8 @@
     - pin espressif32 to 4.2.0 due to error
     - set ArduinoJson to latest fixed version
     - Added new device - inmp441max98357afastled
+   v7.9.1   
+    - Fix issue #113 and #121
 
 * ************************************************************************ */
 
