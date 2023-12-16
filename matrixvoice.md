@@ -3,6 +3,8 @@
 To get the code running I suggest you first reset the Voice if you have flashed it previously
 
 - Follow Step 1 and 2 (or all steps) from this guide https://matrix-io.github.io/matrix-documentation/matrix-voice/esp32/
+  
+  Since the matrix.io repository at apt.matrix.one is offline, install the matrix-creator-init by using this repo https://github.com/qnlbnsl/Matrix-IO
 - Once your environment is set up go into the PlatformIO directory
 - Copy and configure the `settings.ini.example` to `settings.ini` and configure the proper parameters. Any `$` in the `settings.ini` will be threated as an environment variable, did not find a way to escape it yet, fixes or workarounds are welcome
 - Set the device_type to 1 in the settings.ini
